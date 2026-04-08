@@ -2,7 +2,8 @@ const ACCOUNT_PATTERN = /^[a-z0-9](?:[a-z0-9._@-]{1,46}[a-z0-9])?$/;
 const MIN_PASSWORD_LENGTH = 6;
 const MAX_PASSWORD_LENGTH = 72;
 const SESSION_TTL_MS = 90 * 24 * 60 * 60 * 1000;
-const PBKDF2_ITERATIONS = 120000;
+// Cloudflare Workers currently rejects PBKDF2 iteration counts above 100000.
+const PBKDF2_ITERATIONS = 100000;
 
 export class CloudSyncError extends Error {
   constructor(message, status = 400, code = "cloud_sync_error") {
@@ -107,7 +108,15 @@ function randomHex(byteLength) {
   return encodeHex(bytes);
 }
 
-async function hashPassword(password, saltHex) {
+function resolvePasswordIterations(user) {
+  const candidate = Number(user?.passwordIterations);
+  if (Number.isFinite(candidate) && candidate > 0) {
+    return Math.min(Math.trunc(candidate), PBKDF2_ITERATIONS);
+  }
+  return PBKDF2_ITERATIONS;
+}
+
+async function hashPassword(password, saltHex, iterations = PBKDF2_ITERATIONS) {
   const encoder = new TextEncoder();
   const key = await crypto.subtle.importKey(
     "raw",
@@ -121,7 +130,7 @@ async function hashPassword(password, saltHex) {
       name: "PBKDF2",
       hash: "SHA-256",
       salt: decodeHex(saltHex),
-      iterations: PBKDF2_ITERATIONS,
+      iterations,
     },
     key,
     256,
@@ -170,6 +179,7 @@ export async function registerCloudAccount(env, accountId, password) {
     normalizedId,
     salt,
     passwordHash: await hashPassword(passwordText, salt),
+    passwordIterations: PBKDF2_ITERATIONS,
     createdAt: now,
     updatedAt: now,
   };
@@ -188,7 +198,11 @@ export async function loginCloudAccount(env, accountId, password) {
     throw new CloudSyncError("这个同步账号还不存在，请先注册。", 404, "account_missing");
   }
 
-  const candidateHash = await hashPassword(passwordText, String(user.salt || ""));
+  const candidateHash = await hashPassword(
+    passwordText,
+    String(user.salt || ""),
+    resolvePasswordIterations(user),
+  );
   if (!constantTimeEqual(String(user.passwordHash || ""), candidateHash)) {
     throw new CloudSyncError("同步口令不正确。", 401, "password_invalid");
   }

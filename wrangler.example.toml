@@ -1,0 +1,8 @@
+name = "ielts-review-atlas"
+compatibility_date = "2026-04-08"
+pages_build_output_dir = "."
+
+[[kv_namespaces]]
+binding = "REVIEW_ATLAS_SYNC"
+id = "your-production-kv-id"
+preview_id = "your-preview-kv-id"

@@ -1,0 +1,415 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>IELTS Review Atlas</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="ambient ambient--one"></div>
+    <div class="ambient ambient--two"></div>
+    <main class="page-shell">
+      <header class="panel hero" id="top">
+        <div class="hero__copy">
+          <p class="eyebrow">IELTS Review Atlas</p>
+          <h1>把阅读题和听力题错题，沉淀成一套能复用的复盘系统</h1>
+          <p class="hero__lead">
+            用统一字段记录错题、截图和复盘心得，再让 AI 结合你的统计分布与题目图片，一次性总结高频失误题型、定位薄弱环节和下一轮训练重点。
+          </p>
+          <div class="hero__meta">
+            <span>Reading</span>
+            <span>Listening</span>
+            <span>错题统计</span>
+            <span>图片上传</span>
+            <span>AI 复盘总结</span>
+          </div>
+          <div class="hero__actions">
+            <button class="button button--primary" data-scroll-target="capture" type="button">开始录入错题</button>
+            <button class="button button--ghost" data-scroll-target="ai-review" type="button">直达 AI 复盘</button>
+          </div>
+        </div>
+        <aside class="hero__stats">
+          <div class="stat-card stat-card--accent">
+            <span class="stat-card__label">错题总数</span>
+            <strong class="stat-card__value" id="hero-total-count">0</strong>
+          </div>
+          <div class="stat-card">
+            <span class="stat-card__label">高频题型</span>
+            <strong class="stat-card__value stat-card__value--small" id="hero-top-type">待积累</strong>
+          </div>
+          <div class="stat-card">
+            <span class="stat-card__label">主要失误</span>
+            <strong class="stat-card__value stat-card__value--small" id="hero-top-cause">待积累</strong>
+          </div>
+          <div class="stat-card">
+            <span class="stat-card__label">AI 状态</span>
+            <strong class="stat-card__value stat-card__value--small" id="hero-ai-status">检测中</strong>
+          </div>
+          <div class="stat-card">
+            <span class="stat-card__label">云同步</span>
+            <strong class="stat-card__value stat-card__value--small" id="hero-cloud-status">未登录</strong>
+          </div>
+        </aside>
+      </header>
+
+      <section class="panel workflow">
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">复盘路径</p>
+            <h2>先记录细节，再沉淀模式</h2>
+          </div>
+          <p class="section-head__hint">适合每天刷题后立刻补录，也适合周末统一做整批复盘。</p>
+        </div>
+        <div class="workflow-grid">
+          <article class="workflow-card">
+            <span class="workflow-card__step">01</span>
+            <h3>录入错题</h3>
+            <p>按题号、题型、错因、定位和同义替换把单题信息写清楚。</p>
+          </article>
+          <article class="workflow-card">
+            <span class="workflow-card__step">02</span>
+            <h3>上传截图</h3>
+            <p>把题干、选项、定位句或听力原文截图一起存档，方便 AI 看上下文。</p>
+          </article>
+          <article class="workflow-card">
+            <span class="workflow-card__step">03</span>
+            <h3>看本地统计</h3>
+            <p>页面会自动汇总高频题型、常见错因和阅读/听力两边的失分倾向。</p>
+          </article>
+          <article class="workflow-card">
+            <span class="workflow-card__step">04</span>
+            <h3>触发 AI 总结</h3>
+            <p>让 AI 结合你的记录和图片输出一份下一轮复习更好执行的复盘总结。</p>
+          </article>
+        </div>
+      </section>
+
+      <section class="panel dashboard" id="dashboard">
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">错题画像</p>
+            <h2>把“感觉自己总错”变成可量化的薄弱点</h2>
+          </div>
+          <p class="section-head__hint">统计完全保存在本地浏览器，适合持续积累。</p>
+        </div>
+        <div class="dashboard-grid">
+          <article class="metric-card">
+            <span class="metric-card__label">阅读错题</span>
+            <strong class="metric-card__value" id="reading-count">0</strong>
+            <p class="metric-card__note">看阅读部分是否更容易在定位和同义替换上失分。</p>
+          </article>
+          <article class="metric-card">
+            <span class="metric-card__label">听力错题</span>
+            <strong class="metric-card__value" id="listening-count">0</strong>
+            <p class="metric-card__note">看听力是否更多卡在拼写、单复数或跟丢信号词。</p>
+          </article>
+          <article class="metric-card">
+            <span class="metric-card__label">图片档案</span>
+            <strong class="metric-card__value" id="image-count">0</strong>
+            <p class="metric-card__note">截图越齐，AI 越容易指出你为什么会被干扰项带偏。</p>
+          </article>
+          <article class="metric-card">
+            <span class="metric-card__label">本周重点</span>
+            <strong class="metric-card__value metric-card__value--small" id="focus-summary">先录几题</strong>
+            <p class="metric-card__note" id="focus-summary-note">录入后这里会自动给你一句最值得盯住的训练提醒。</p>
+          </article>
+        </div>
+        <div class="analytics-grid">
+          <article class="analysis-card">
+            <div class="analysis-card__head">
+              <h3>高频题型</h3>
+              <span class="badge">自动累计</span>
+            </div>
+            <div class="rank-list" id="type-breakdown"></div>
+          </article>
+          <article class="analysis-card">
+            <div class="analysis-card__head">
+              <h3>常见错因</h3>
+              <span class="badge">结构化标签</span>
+            </div>
+            <div class="rank-list" id="cause-breakdown"></div>
+          </article>
+          <article class="analysis-card">
+            <div class="analysis-card__head">
+              <h3>近期复盘心得</h3>
+              <span class="badge">来自你的记录</span>
+            </div>
+            <div class="insight-stack" id="insight-highlights"></div>
+          </article>
+        </div>
+      </section>
+
+      <div class="workspace-grid">
+        <section class="panel capture-panel" id="capture">
+          <div class="section-head">
+            <div>
+              <p class="eyebrow">录入错题</p>
+              <h2>按你截图里的字段来，同时加上更适合复盘的结构化标签</h2>
+            </div>
+            <p class="section-head__hint">支持图片上传、拖拽和直接粘贴截图。</p>
+          </div>
+
+          <form id="entry-form" class="entry-form">
+            <div class="form-grid">
+              <label>
+                模块
+                <select id="entry-section" required>
+                  <option value="reading">阅读</option>
+                  <option value="listening">听力</option>
+                </select>
+              </label>
+              <label>
+                题目来源
+                <input id="entry-source" type="text" maxlength="120" placeholder="如 Cambridge 18 Test 3" required />
+              </label>
+              <label>
+                题号
+                <input id="entry-question-number" type="text" maxlength="40" placeholder="如 14 / 27-30" required />
+              </label>
+              <label>
+                题型
+                <select id="entry-question-type" required></select>
+              </label>
+              <label>
+                错误选项
+                <input id="entry-wrong-answer" type="text" maxlength="160" placeholder="如 B / airport" />
+              </label>
+              <label>
+                正确选项
+                <input id="entry-correct-answer" type="text" maxlength="160" placeholder="如 C / airports" />
+              </label>
+            </div>
+
+            <div class="field-group">
+              <span class="field-group__label">常见错因标签</span>
+              <div class="chip-selector" id="cause-selector"></div>
+            </div>
+
+            <div class="form-grid form-grid--wide">
+              <label>
+                错因展开
+                <textarea
+                  id="entry-error-reason"
+                  rows="4"
+                  maxlength="800"
+                  placeholder="写清楚为什么会错：是定位慢、没识别同义替换、听漏了转折、还是被干扰项带偏。"
+                ></textarea>
+              </label>
+              <label>
+                原文定位
+                <textarea
+                  id="entry-text-location"
+                  rows="4"
+                  maxlength="800"
+                  placeholder="写对应原文或录音定位句、信号词、前后文切换点。"
+                ></textarea>
+              </label>
+              <label>
+                同义替换
+                <textarea
+                  id="entry-paraphrase"
+                  rows="4"
+                  maxlength="800"
+                  placeholder="记录题干、选项和原文里的替换关系。"
+                ></textarea>
+              </label>
+              <label>
+                复盘心得
+                <textarea
+                  id="entry-review-note"
+                  rows="4"
+                  maxlength="800"
+                  placeholder="写下一轮要怎么避免，比如先圈定位词、先预测词性、听到转折先别急着选。"
+                ></textarea>
+              </label>
+            </div>
+
+            <div class="form-grid form-grid--compact">
+              <label>
+                难度感受
+                <select id="entry-difficulty">
+                  <option value="1">1 - 比较简单</option>
+                  <option value="2">2 - 可控</option>
+                  <option value="3" selected>3 - 一般</option>
+                  <option value="4">4 - 偏难</option>
+                  <option value="5">5 - 很容易踩坑</option>
+                </select>
+              </label>
+              <label>
+                自定义标签
+                <input id="entry-tags" type="text" maxlength="200" placeholder="逗号分隔，如 matching, heading, campus map" />
+              </label>
+              <label>
+                这题是否值得加入 AI 重点复盘
+                <select id="entry-ai-priority">
+                  <option value="high">高</option>
+                  <option value="normal" selected>中</option>
+                  <option value="low">低</option>
+                </select>
+              </label>
+            </div>
+
+            <div class="upload-panel" id="image-dropzone" tabindex="0">
+              <div>
+                <p class="upload-panel__title">上传或粘贴题目截图</p>
+                <p class="upload-panel__hint">支持多图，可放题干、选项、定位句、听力原文或你的手写批注。</p>
+              </div>
+              <div class="upload-panel__actions">
+                <label class="button button--ghost button--small">
+                  选择图片
+                  <input id="entry-images" type="file" accept="image/*" multiple hidden />
+                </label>
+                <span class="upload-panel__mini">也可以把截图拖进来，或直接 Ctrl/Cmd + V 粘贴</span>
+              </div>
+            </div>
+            <div class="image-grid" id="image-preview"></div>
+
+            <div class="form-actions">
+              <button class="button button--primary" id="save-entry" type="submit">保存错题</button>
+              <button class="button button--ghost" id="reset-entry-form" type="button">清空表单</button>
+              <span class="form-status" id="entry-form-status">数据会自动保存在本地浏览器。</span>
+            </div>
+          </form>
+        </section>
+
+        <aside class="panel side-panel">
+          <div class="section-head">
+            <div>
+              <p class="eyebrow">实用工具</p>
+              <h2>把复盘变成可持续积累的资料库</h2>
+            </div>
+          </div>
+          <div class="tool-stack">
+            <article class="note-card">
+              <h3>导出备份</h3>
+              <p>支持导出 JSON 和 CSV，方便你继续整理到表格或者同步到别的设备。</p>
+              <div class="inline-actions">
+                <button class="button button--ghost button--small" id="export-json" type="button">导出 JSON</button>
+                <button class="button button--ghost button--small" id="export-csv" type="button">导出 CSV</button>
+              </div>
+            </article>
+            <article class="note-card">
+              <h3>导入历史</h3>
+              <p>如果你换浏览器或想恢复之前的记录，可以把导出的 JSON 导回当前页面。</p>
+              <div class="inline-actions">
+                <label class="button button--ghost button--small">
+                  导入 JSON
+                  <input id="import-json" type="file" accept="application/json" hidden />
+                </label>
+              </div>
+            </article>
+            <article class="note-card">
+              <h3>推荐录法</h3>
+              <p>单题最关键的是写清“为什么会错”和“下一次怎么避免”，不是只记正确答案。</p>
+            </article>
+            <article class="note-card">
+              <h3>AI 说明</h3>
+              <p id="ai-side-meta">AI 会读取你选中的错题、结构化统计和截图，一起做复盘总结。</p>
+            </article>
+            <article class="note-card">
+              <h3>云端同步</h3>
+              <div class="cloud-status-stack">
+                <span class="badge badge--cloud" id="cloud-sync-status">云端同步：检测中</span>
+                <p id="cloud-sync-meta">登录同一个同步账号后，这个错题库会自动备份到云端，避免只保留在当前浏览器。</p>
+                <div class="inline-actions">
+                  <span class="entry-chip" id="cloud-account-chip">当前：本地模式</span>
+                  <span class="entry-chip" id="cloud-last-sync-chip">最近同步：尚未同步</span>
+                </div>
+              </div>
+              <form class="cloud-form" id="cloud-auth-form">
+                <label>
+                  同步账号
+                  <input id="cloud-account" type="text" maxlength="48" placeholder="如 shyn-review" />
+                </label>
+                <label>
+                  同步口令
+                  <input id="cloud-password" type="password" maxlength="72" placeholder="至少 6 位" />
+                </label>
+                <div class="inline-actions">
+                  <button class="button button--ghost button--small" id="cloud-register" type="button">注册</button>
+                  <button class="button button--ghost button--small" id="cloud-login" type="button">登录</button>
+                  <button class="button button--ghost button--small" id="cloud-sync-now" type="button">立即同步</button>
+                  <button class="button button--ghost button--small" id="cloud-logout" type="button">退出</button>
+                </div>
+              </form>
+            </article>
+          </div>
+        </aside>
+      </div>
+
+      <section class="panel journal-panel" id="journal">
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">错题档案</p>
+            <h2>筛选、勾选，再决定这一轮要不要交给 AI 总结</h2>
+          </div>
+          <p class="section-head__hint">支持按模块、题型、错因和关键词过滤。</p>
+        </div>
+        <div class="filter-bar">
+          <div class="segmented" id="section-filter">
+            <button class="segmented__item is-active" data-section-filter="all" type="button">全部</button>
+            <button class="segmented__item" data-section-filter="reading" type="button">阅读</button>
+            <button class="segmented__item" data-section-filter="listening" type="button">听力</button>
+          </div>
+          <label>
+            题型
+            <select id="filter-question-type"></select>
+          </label>
+          <label>
+            错因
+            <select id="filter-cause"></select>
+          </label>
+          <label class="filter-bar__search">
+            关键词
+            <input id="filter-keyword" type="search" placeholder="搜来源、题号、心得或替换" />
+          </label>
+        </div>
+        <div class="toolbar">
+          <span class="toolbar__meta" id="selection-summary">已选 0 条，当前筛出 0 条。</span>
+          <div class="inline-actions">
+            <button class="button button--ghost button--small" id="select-filtered" type="button">勾选当前筛选</button>
+            <button class="button button--ghost button--small" id="clear-selection" type="button">清空勾选</button>
+          </div>
+        </div>
+        <div class="entry-list" id="entry-list"></div>
+      </section>
+
+      <section class="panel ai-panel" id="ai-review">
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">AI 复盘</p>
+            <h2>结合统计和截图，输出这一轮错题最值得记住的总结</h2>
+          </div>
+          <p class="section-head__hint">支持只分析已勾选条目，也支持直接分析当前筛选结果。</p>
+        </div>
+        <div class="ai-controls">
+          <label>
+            分析范围
+            <select id="ai-scope">
+              <option value="selected">已勾选条目</option>
+              <option value="filtered">当前筛选结果</option>
+              <option value="all">全部错题</option>
+            </select>
+          </label>
+          <label>
+            本轮目标
+            <input id="ai-goal" type="text" maxlength="120" placeholder="如 下周把 matching 和地图题稳定下来" />
+          </label>
+          <label class="ai-controls__note">
+            补充说明
+            <textarea id="ai-note" rows="3" maxlength="400" placeholder="比如这周主要刷剑桥 18，想重点看干扰项判断和定位速度。"></textarea>
+          </label>
+          <div class="ai-controls__actions">
+            <button class="button button--primary" id="run-ai-review" type="button">生成 AI 复盘总结</button>
+            <span class="ai-controls__status" id="ai-request-status">等待分析</span>
+          </div>
+        </div>
+        <div class="ai-result" id="ai-result"></div>
+      </section>
+    </main>
+
+    <script src="./site-config.js"></script>
+    <script src="./app.js"></script>
+  </body>
+</html>

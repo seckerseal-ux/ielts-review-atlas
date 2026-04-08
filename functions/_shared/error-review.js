@@ -1,0 +1,412 @@
+const DEFAULT_GEMAI_BASE_URL = "https://api.gemai.cc/v1";
+const DEFAULT_ERROR_REVIEW_MODEL = "gpt-5.1-thinking";
+const MAX_ERROR_REVIEW_ENTRIES = 40;
+const MAX_ERROR_REVIEW_IMAGES = 6;
+const MAX_ERROR_REVIEW_IMAGE_DATA_URL_CHARS = 6 * 1024 * 1024;
+
+const ERROR_REVIEW_SCHEMA = {
+  type: "object",
+  additionalProperties: false,
+  properties: {
+    summary: { type: "string" },
+    ability_snapshot: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        stronger_section: { type: "string" },
+        risk_section: { type: "string" },
+        accuracy_pattern: { type: "string" },
+      },
+      required: ["stronger_section", "risk_section", "accuracy_pattern"],
+    },
+    recurring_question_types: {
+      type: "array",
+      items: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          question_type: { type: "string" },
+          count: { type: "number" },
+          why_wrong: { type: "string" },
+          fix: { type: "string" },
+        },
+        required: ["question_type", "count", "why_wrong", "fix"],
+      },
+    },
+    recurring_error_causes: {
+      type: "array",
+      items: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          cause: { type: "string" },
+          count: { type: "number" },
+          pattern: { type: "string" },
+          fix: { type: "string" },
+        },
+        required: ["cause", "count", "pattern", "fix"],
+      },
+    },
+    image_observations: {
+      type: "array",
+      items: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          image_label: { type: "string" },
+          observation: { type: "string" },
+          implication: { type: "string" },
+        },
+        required: ["image_label", "observation", "implication"],
+      },
+    },
+    reflection_highlights: { type: "array", items: { type: "string" } },
+    next_actions: { type: "array", items: { type: "string" } },
+    next_drill_plan: { type: "array", items: { type: "string" } },
+    coach_message: { type: "string" },
+  },
+  required: [
+    "summary",
+    "ability_snapshot",
+    "recurring_question_types",
+    "recurring_error_causes",
+    "image_observations",
+    "reflection_highlights",
+    "next_actions",
+    "next_drill_plan",
+    "coach_message",
+  ],
+};
+
+const ERROR_REVIEW_INSTRUCTIONS = `
+You are a strict but encouraging IELTS Reading and Listening mistake-review coach.
+You will receive:
+1. Structured wrong-answer journal entries for IELTS Reading and Listening.
+2. Aggregated statistics such as recurring question types, error-cause tags, and recent reflections.
+3. Optional user goal notes for this review round.
+4. Optional uploaded screenshots related to the wrong questions.
+
+Return feedback in Simplified Chinese.
+Ground every judgment in the supplied entries, statistics, and screenshots.
+Do not invent details that are not visible in the data.
+The main job is to help the candidate see recurring question types, recurring causes, and what to do differently next time.
+When screenshots are present, use them to explain likely distraction points, paraphrase traps, layout issues, or why the candidate may have missed the clue.
+Keep the tone concise, actionable, and coach-like.
+For recurring_question_types and recurring_error_causes, use counts that stay close to the supplied statistics.
+reflection_highlights should extract the most valuable review takeaways already visible in the candidate's own notes.
+next_actions should be immediate, concrete moves for the next 3-7 days.
+next_drill_plan should describe short drills that directly target the current weak spots.
+coach_message should be a short closing paragraph that is motivating but not fluffy.
+`.trim();
+
+export class ApiError extends Error {
+  constructor(message, status = 400) {
+    super(message);
+    this.status = status;
+  }
+}
+
+export function jsonResponse(body, status = 200) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: {
+      "Content-Type": "application/json; charset=utf-8",
+      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Headers": "Content-Type, Accept",
+      "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+    },
+  });
+}
+
+export function handleOptions(request) {
+  if (request.method !== "OPTIONS") {
+    return null;
+  }
+  return jsonResponse({}, 204);
+}
+
+export function getBaseUrl(env) {
+  return String(env.OPENAI_ERROR_REVIEW_BASE_URL || env.OPENAI_BASE_URL || DEFAULT_GEMAI_BASE_URL).trim();
+}
+
+export function getModel(env) {
+  return String(env.OPENAI_ERROR_REVIEW_MODEL || DEFAULT_ERROR_REVIEW_MODEL).trim();
+}
+
+export function getApiKey(env) {
+  return String(env.OPENAI_API_KEY || "").trim();
+}
+
+export function getProviderLabel(baseUrl) {
+  const normalized = String(baseUrl || "").trim().toLowerCase();
+  if (normalized.includes("api.gemai.cc")) {
+    return "GemAI";
+  }
+  if (normalized.includes("aihubmix.com")) {
+    return "AIHubMix";
+  }
+  return "OpenAI";
+}
+
+export function getStatus(env) {
+  const baseUrl = getBaseUrl(env);
+  return {
+    available: Boolean(getApiKey(env)),
+    provider: "openai",
+    provider_label: getProviderLabel(baseUrl),
+    base_url: baseUrl,
+    review_model: getModel(env),
+  };
+}
+
+function sanitizeShortText(value, limit) {
+  return String(value || "").trim().slice(0, limit);
+}
+
+function sanitizeStringList(values, limit = 8, itemLimit = 80) {
+  if (!Array.isArray(values)) {
+    return [];
+  }
+  const cleaned = [];
+  values.forEach((value) => {
+    const text = sanitizeShortText(value, itemLimit);
+    if (text && !cleaned.includes(text) && cleaned.length < limit) {
+      cleaned.push(text);
+    }
+  });
+  return cleaned;
+}
+
+function normalizeEntry(entry) {
+  if (!entry || typeof entry !== "object") {
+    throw new ApiError("错题条目格式不正确。", 400);
+  }
+
+  const section = sanitizeShortText(entry.section, 20).toLowerCase() === "listening" ? "listening" : "reading";
+  const source = sanitizeShortText(entry.source, 120);
+  const questionNumber = sanitizeShortText(entry.question_number, 40);
+  const questionType = sanitizeShortText(entry.question_type, 80);
+
+  if (!source || !questionNumber || !questionType) {
+    throw new ApiError("每条错题至少需要包含题目来源、题号和题型。", 400);
+  }
+
+  return {
+    id: sanitizeShortText(entry.id, 80),
+    section,
+    source,
+    question_number: questionNumber,
+    question_type: questionType,
+    wrong_answer: sanitizeShortText(entry.wrong_answer, 160),
+    correct_answer: sanitizeShortText(entry.correct_answer, 160),
+    cause_tags: sanitizeStringList(entry.cause_tags, 8, 60),
+    error_reason: sanitizeShortText(entry.error_reason, 1200),
+    text_location: sanitizeShortText(entry.text_location, 1200),
+    paraphrase: sanitizeShortText(entry.paraphrase, 1200),
+    review_note: sanitizeShortText(entry.review_note, 1200),
+    difficulty: Math.max(1, Math.min(5, Number(entry.difficulty || 3) || 3)),
+    tags: sanitizeStringList(entry.tags, 8, 60),
+    ai_priority: sanitizeShortText(entry.ai_priority, 20) || "normal",
+  };
+}
+
+function normalizeImage(image) {
+  if (!image || typeof image !== "object") {
+    throw new ApiError("图片条目格式不正确。", 400);
+  }
+
+  const dataUrl = String(image.data_url || "").trim();
+  if (!dataUrl.startsWith("data:image/")) {
+    throw new ApiError("图片必须以 data:image/... 的 data URL 形式提交。", 400);
+  }
+  if (dataUrl.length > MAX_ERROR_REVIEW_IMAGE_DATA_URL_CHARS) {
+    throw new ApiError("单张图片过大，请压缩后再上传。", 400);
+  }
+
+  return {
+    entry_id: sanitizeShortText(image.entry_id, 80),
+    image_label: sanitizeShortText(image.image_label, 120) || "题目截图",
+    name: sanitizeShortText(image.name, 120) || "screenshot.png",
+    data_url: dataUrl,
+  };
+}
+
+function extractCompletionText(payload, providerLabel) {
+  const choice = payload?.choices?.[0];
+  if (!choice) {
+    throw new ApiError(`${providerLabel} 返回了空响应。`, 502);
+  }
+
+  const content = choice.message?.content;
+  if (typeof content === "string") {
+    return content.trim();
+  }
+
+  if (Array.isArray(content)) {
+    const parts = content
+      .filter((item) => item?.type === "text" || item?.type === "output_text")
+      .map((item) => item.text?.value || item.text || "")
+      .filter(Boolean);
+    if (parts.length) {
+      return parts.join("\n").trim();
+    }
+  }
+
+  throw new ApiError(`${providerLabel} 返回了无法识别的响应格式。`, 502);
+}
+
+function parseJsonTextResponse(text, providerLabel) {
+  const rawText = String(text || "").trim();
+  if (!rawText) {
+    throw new ApiError(`${providerLabel} 返回了空的 JSON 文本。`, 502);
+  }
+
+  const candidates = [rawText];
+  if (rawText.startsWith("```")) {
+    const lines = rawText.split("\n");
+    if (lines.length >= 3 && lines.at(-1)?.startsWith("```")) {
+      candidates.push(lines.slice(1, -1).join("\n").trim());
+    }
+  }
+  const firstCurly = rawText.indexOf("{");
+  const lastCurly = rawText.lastIndexOf("}");
+  if (firstCurly >= 0 && lastCurly > firstCurly) {
+    candidates.push(rawText.slice(firstCurly, lastCurly + 1));
+  }
+
+  for (const candidate of candidates) {
+    try {
+      return JSON.parse(candidate);
+    } catch {
+      continue;
+    }
+  }
+
+  throw new ApiError(`${providerLabel} 返回了无法解析的 JSON 结果。`, 502);
+}
+
+function clampPayload(payload) {
+  const snapshot = payload?.ability_snapshot || {};
+  return {
+    summary: String(payload?.summary || "").trim(),
+    ability_snapshot: {
+      stronger_section: String(snapshot.stronger_section || "").trim(),
+      risk_section: String(snapshot.risk_section || "").trim(),
+      accuracy_pattern: String(snapshot.accuracy_pattern || "").trim(),
+    },
+    recurring_question_types: Array.isArray(payload?.recurring_question_types) ? payload.recurring_question_types.slice(0, 5) : [],
+    recurring_error_causes: Array.isArray(payload?.recurring_error_causes) ? payload.recurring_error_causes.slice(0, 5) : [],
+    image_observations: Array.isArray(payload?.image_observations) ? payload.image_observations.slice(0, 4) : [],
+    reflection_highlights: Array.isArray(payload?.reflection_highlights) ? payload.reflection_highlights.slice(0, 5).map(String) : [],
+    next_actions: Array.isArray(payload?.next_actions) ? payload.next_actions.slice(0, 5).map(String) : [],
+    next_drill_plan: Array.isArray(payload?.next_drill_plan) ? payload.next_drill_plan.slice(0, 5).map(String) : [],
+    coach_message: String(payload?.coach_message || "").trim(),
+  };
+}
+
+export async function requestErrorReview(payload, env) {
+  const rawEntries = Array.isArray(payload?.entries) ? payload.entries : [];
+  const rawImages = Array.isArray(payload?.images) ? payload.images : [];
+  if (!rawEntries.length) {
+    throw new ApiError("请求里缺少可复盘的错题条目。", 400);
+  }
+  if (rawEntries.length > MAX_ERROR_REVIEW_ENTRIES) {
+    throw new ApiError("单次 AI 复盘的错题数量过多，请控制在 40 条以内。", 400);
+  }
+  if (rawImages.length > MAX_ERROR_REVIEW_IMAGES) {
+    throw new ApiError("单次 AI 复盘最多附带 6 张图片。", 400);
+  }
+
+  const baseUrl = getBaseUrl(env);
+  const apiKey = getApiKey(env);
+  const providerLabel = getProviderLabel(baseUrl);
+  const model = getModel(env);
+  if (!apiKey) {
+    throw new ApiError("缺少 OPENAI_API_KEY，请先在 Cloudflare 环境变量里设置 GemAI / OpenAI 兼容接口所需的 Key。", 503);
+  }
+
+  const entries = rawEntries.map(normalizeEntry);
+  const images = rawImages.map(normalizeImage);
+  const focusGoal = sanitizeShortText(payload?.focus_goal, 160);
+  const note = sanitizeShortText(payload?.note, 500);
+  const stats = payload?.stats && typeof payload.stats === "object" ? payload.stats : {};
+
+  const userContent = [
+    {
+      type: "text",
+      text: [
+        "请基于以下 IELTS 阅读/听力错题档案做结构化复盘。",
+        "",
+        "本轮目标:",
+        focusGoal || "未提供",
+        "",
+        "用户补充:",
+        note || "未提供",
+        "",
+        "错题条目:",
+        JSON.stringify(entries, null, 2),
+        "",
+        "统计汇总:",
+        JSON.stringify(stats, null, 2),
+        "",
+        "请务必输出一个合法 JSON 对象，不要添加 markdown、解释、代码块或思考过程。",
+        `JSON Schema:\n${JSON.stringify(ERROR_REVIEW_SCHEMA)}`,
+      ].join("\n"),
+    },
+  ];
+
+  images.forEach((image) => {
+    userContent.push({
+      type: "text",
+      text: `下面这张图对应：${image.image_label}。请结合它判断题干布局、干扰项、定位线索或同义替换陷阱。`,
+    });
+    userContent.push({
+      type: "image_url",
+      image_url: {
+        url: image.data_url,
+      },
+    });
+  });
+
+  const response = await fetch(`${baseUrl}/chat/completions`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+      Accept: "application/json",
+    },
+    body: JSON.stringify({
+      model,
+      messages: [
+        { role: "system", content: ERROR_REVIEW_INSTRUCTIONS },
+        { role: "user", content: userContent },
+      ],
+      temperature: 0.2,
+      stream: false,
+    }),
+  });
+
+  const rawText = await response.text();
+  let parsedResponse = null;
+  try {
+    parsedResponse = rawText ? JSON.parse(rawText) : {};
+  } catch {
+    parsedResponse = null;
+  }
+
+  if (!response.ok) {
+    const message = parsedResponse?.error?.message || rawText || "未知错误";
+    throw new ApiError(`${providerLabel} 接口返回错误：${message}`, response.status);
+  }
+
+  const review = clampPayload(
+    parseJsonTextResponse(extractCompletionText(parsedResponse || {}, providerLabel), providerLabel),
+  );
+
+  return {
+    provider: "openai",
+    provider_label: providerLabel,
+    review_model: model,
+    review,
+  };
+}

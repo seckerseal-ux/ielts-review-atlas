@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>IELTS Review Atlas</title>
+    <title>IELTS & Kaoyan Review Atlas</title>
     <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
@@ -12,14 +12,15 @@
     <main class="page-shell">
       <header class="panel hero" id="top">
         <div class="hero__copy">
-          <p class="eyebrow">IELTS Review Atlas</p>
-          <h1>把阅读题和听力题错题，沉淀成一套能复用的复盘系统</h1>
+          <p class="eyebrow">IELTS & Kaoyan Review Atlas</p>
+          <h1>把雅思和考研英语错题，沉淀成一套不冲突的复盘系统</h1>
           <p class="hero__lead">
-            用统一字段记录错题、截图和复盘心得，再让 AI 结合你的统计分布与题目图片，一次性总结高频失误题型、定位薄弱环节和下一轮训练重点。
+            用统一字段记录雅思与考研英语的错题、截图和复盘心得，再让 AI 结合统计分布与题目图片，分别总结高频失误题型、薄弱模块和下一轮训练重点。
           </p>
           <div class="hero__meta">
-            <span>Reading</span>
-            <span>Listening</span>
+            <span>IELTS</span>
+            <span>考研英语</span>
+            <span>阅读 / 听力 / 新题型 / 完型</span>
             <span>错题统计</span>
             <span>图片上传</span>
             <span>AI 复盘总结</span>
@@ -65,7 +66,7 @@
           <article class="workflow-card">
             <span class="workflow-card__step">01</span>
             <h3>录入错题</h3>
-            <p>按题号、题型、错因、定位和同义替换把单题信息写清楚。</p>
+            <p>按考试体系、模块、题型、错因、定位和同义替换把单题信息写清楚。</p>
           </article>
           <article class="workflow-card">
             <span class="workflow-card__step">02</span>
@@ -75,7 +76,7 @@
           <article class="workflow-card">
             <span class="workflow-card__step">03</span>
             <h3>看本地统计</h3>
-            <p>页面会自动汇总高频题型、常见错因和阅读/听力两边的失分倾向。</p>
+            <p>页面会自动区分雅思与考研英语，分别汇总高频题型、常见错因和失分倾向。</p>
           </article>
           <article class="workflow-card">
             <span class="workflow-card__step">04</span>
@@ -91,18 +92,18 @@
             <p class="eyebrow">错题画像</p>
             <h2>把“感觉自己总错”变成可量化的薄弱点</h2>
           </div>
-          <p class="section-head__hint">统计完全保存在本地浏览器，适合持续积累。</p>
+          <p class="section-head__hint">统计和筛选会区分考试体系，避免雅思和考研英语混在一起。</p>
         </div>
         <div class="dashboard-grid">
           <article class="metric-card">
-            <span class="metric-card__label">阅读错题</span>
-            <strong class="metric-card__value" id="reading-count">0</strong>
-            <p class="metric-card__note">看阅读部分是否更容易在定位和同义替换上失分。</p>
+            <span class="metric-card__label">雅思错题</span>
+            <strong class="metric-card__value" id="ielts-count">0</strong>
+            <p class="metric-card__note">单独看雅思阅读和听力的错题积累，不会和考研英语混算。</p>
           </article>
           <article class="metric-card">
-            <span class="metric-card__label">听力错题</span>
-            <strong class="metric-card__value" id="listening-count">0</strong>
-            <p class="metric-card__note">看听力是否更多卡在拼写、单复数或跟丢信号词。</p>
+            <span class="metric-card__label">考研英语错题</span>
+            <strong class="metric-card__value" id="kaoyan-count">0</strong>
+            <p class="metric-card__note">单独看考研阅读、新题型和完型的错题积累，方便分模块训练。</p>
           </article>
           <article class="metric-card">
             <span class="metric-card__label">图片档案</span>
@@ -145,7 +146,7 @@
           <div class="section-head">
             <div>
               <p class="eyebrow">录入错题</p>
-              <h2>按你截图里的字段来，同时加上更适合复盘的结构化标签</h2>
+              <h2>按你截图里的字段来，同时把雅思和考研英语拆开记录</h2>
             </div>
             <p class="section-head__hint">支持图片上传、拖拽和直接粘贴截图。</p>
           </div>
@@ -153,15 +154,19 @@
           <form id="entry-form" class="entry-form">
             <div class="form-grid">
               <label>
-                模块
-                <select id="entry-section" required>
-                  <option value="reading">阅读</option>
-                  <option value="listening">听力</option>
+                考试体系
+                <select id="entry-exam" required>
+                  <option value="ielts">雅思</option>
+                  <option value="kaoyan">考研英语</option>
                 </select>
               </label>
               <label>
+                模块
+                <select id="entry-section" required></select>
+              </label>
+              <label>
                 题目来源
-                <input id="entry-source" type="text" maxlength="120" placeholder="如 Cambridge 18 Test 3" required />
+                <input id="entry-source" type="text" maxlength="120" placeholder="如 Cambridge 18 Test 3 / 2024 英语一 Text 2" required />
               </label>
               <label>
                 题号
@@ -193,7 +198,7 @@
                   id="entry-error-reason"
                   rows="4"
                   maxlength="800"
-                  placeholder="写清楚为什么会错：是定位慢、没识别同义替换、听漏了转折、还是被干扰项带偏。"
+                  placeholder="写清楚为什么会错：是定位慢、没识别同义替换、转折态度判断失误、还是被干扰项带偏。"
                 ></textarea>
               </label>
               <label>
@@ -211,7 +216,7 @@
                   id="entry-paraphrase"
                   rows="4"
                   maxlength="800"
-                  placeholder="记录题干、选项和原文里的替换关系。"
+                  placeholder="记录题干、选项和原文里的替换关系，或考研阅读里的替换链和复现词。"
                 ></textarea>
               </label>
               <label>
@@ -220,7 +225,7 @@
                   id="entry-review-note"
                   rows="4"
                   maxlength="800"
-                  placeholder="写下一轮要怎么避免，比如先圈定位词、先预测词性、听到转折先别急着选。"
+                  placeholder="写下一轮要怎么避免，比如先圈定位词、先看态度词强弱、先搭篇章逻辑骨架。"
                 ></textarea>
               </label>
             </div>
@@ -238,7 +243,7 @@
               </label>
               <label>
                 自定义标签
-                <input id="entry-tags" type="text" maxlength="200" placeholder="逗号分隔，如 matching, heading, campus map" />
+                <input id="entry-tags" type="text" maxlength="200" placeholder="逗号分隔，如 matching, 细节题, 七选五, 完型逻辑" />
               </label>
               <label>
                 这题是否值得加入 AI 重点复盘
@@ -305,7 +310,7 @@
             </article>
             <article class="note-card">
               <h3>AI 说明</h3>
-              <p id="ai-side-meta">AI 会读取你选中的错题、结构化统计和截图，一起做复盘总结。</p>
+              <p id="ai-side-meta">AI 会读取你选中的错题、结构化统计和截图，一起做分考试体系的复盘总结。</p>
             </article>
             <article class="note-card">
               <h3>云端同步</h3>
@@ -344,14 +349,17 @@
             <p class="eyebrow">错题档案</p>
             <h2>筛选、勾选，再决定这一轮要不要交给 AI 总结</h2>
           </div>
-          <p class="section-head__hint">支持按模块、题型、错因和关键词过滤。</p>
+          <p class="section-head__hint">支持按考试体系、模块、题型、错因和关键词过滤。</p>
         </div>
         <div class="filter-bar">
-          <div class="segmented" id="section-filter">
-            <button class="segmented__item is-active" data-section-filter="all" type="button">全部</button>
-            <button class="segmented__item" data-section-filter="reading" type="button">阅读</button>
-            <button class="segmented__item" data-section-filter="listening" type="button">听力</button>
-          </div>
+          <label>
+            考试体系
+            <select id="filter-exam"></select>
+          </label>
+          <label>
+            模块
+            <select id="filter-section"></select>
+          </label>
           <label>
             题型
             <select id="filter-question-type"></select>
@@ -394,11 +402,11 @@
           </label>
           <label>
             本轮目标
-            <input id="ai-goal" type="text" maxlength="120" placeholder="如 下周把 matching 和地图题稳定下来" />
+            <input id="ai-goal" type="text" maxlength="120" placeholder="如 下周把 matching 稳下来 / 把考研新题型衔接判断拉稳" />
           </label>
           <label class="ai-controls__note">
             补充说明
-            <textarea id="ai-note" rows="3" maxlength="400" placeholder="比如这周主要刷剑桥 18，想重点看干扰项判断和定位速度。"></textarea>
+            <textarea id="ai-note" rows="3" maxlength="400" placeholder="比如这周主要刷剑桥 18 或真题阅读，想重点看干扰项判断、态度题或篇章衔接。"></textarea>
           </label>
           <div class="ai-controls__actions">
             <button class="button button--primary" id="run-ai-review" type="button">生成 AI 复盘总结</button>

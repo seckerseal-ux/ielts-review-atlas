@@ -1,61 +1,146 @@
-const QUESTION_TYPE_OPTIONS = {
-  reading: [
-    "Heading Matching",
-    "Matching Information",
-    "Matching Features",
-    "Matching Sentence Endings",
-    "True / False / Not Given",
-    "Yes / No / Not Given",
-    "Multiple Choice",
-    "Summary Completion",
-    "Sentence Completion",
-    "Short Answer",
-    "Diagram Labeling",
-    "Table Completion",
-  ],
-  listening: [
-    "Form Completion",
-    "Note Completion",
-    "Table Completion",
-    "Sentence Completion",
-    "Short Answer",
-    "Multiple Choice",
-    "Map Labeling",
-    "Plan / Diagram Labeling",
-    "Matching",
-    "Summary Completion",
-  ],
+const EXAM_CONFIG = {
+  ielts: {
+    label: "雅思",
+    sections: {
+      reading: {
+        label: "阅读",
+        questionTypes: [
+          "Heading Matching",
+          "Matching Information",
+          "Matching Features",
+          "Matching Sentence Endings",
+          "True / False / Not Given",
+          "Yes / No / Not Given",
+          "Multiple Choice",
+          "Summary Completion",
+          "Sentence Completion",
+          "Short Answer",
+          "Diagram Labeling",
+          "Table Completion",
+        ],
+        causes: [
+          "段落主旨抓偏",
+          "heading 关键词误导",
+          "NG / FALSE 判断混淆",
+          "细节和主旨混淆",
+          "段落匹配回查不全",
+          "原文定位句看漏",
+          "逻辑转折没抓住",
+          "指代关系没看清",
+          "限定词范围忽略",
+          "选项对比不充分",
+        ],
+      },
+      listening: {
+        label: "听力",
+        questionTypes: [
+          "Form Completion",
+          "Note Completion",
+          "Table Completion",
+          "Sentence Completion",
+          "Short Answer",
+          "Multiple Choice",
+          "Map Labeling",
+          "Plan / Diagram Labeling",
+          "Matching",
+          "Summary Completion",
+        ],
+        causes: [
+          "听漏转折",
+          "预测词性失败",
+          "拼写错误",
+          "单复数错误",
+          "数字日期错误",
+          "地图跟丢",
+          "速度太快没跟上",
+        ],
+      },
+    },
+  },
+  kaoyan: {
+    label: "考研英语",
+    sections: {
+      reading: {
+        label: "阅读",
+        questionTypes: [
+          "细节理解题",
+          "推理判断题",
+          "主旨大意题",
+          "观点态度题",
+          "词义句意题",
+          "例证题",
+          "文章结构题",
+        ],
+        causes: [
+          "题干定位词抓错",
+          "选项偷换概念",
+          "转折让步没抓住",
+          "态度词强弱误判",
+          "推理过度",
+          "例证和论点关系没看清",
+          "指代句间逻辑没理顺",
+          "时间范围对比错位",
+          "同义改写链断裂",
+          "正确项证据不足",
+        ],
+      },
+      new_question: {
+        label: "新题型",
+        questionTypes: [
+          "七选五",
+          "排序题",
+          "标题对应",
+          "多项对应",
+        ],
+        causes: [
+          "篇章衔接词忽略",
+          "代词指代链断裂",
+          "段落逻辑顺序判断失误",
+          "主题句和支撑句错配",
+          "首尾句线索没利用",
+          "复现词串联不足",
+          "选项对比粒度不够",
+          "局部正确整体不通",
+        ],
+      },
+      cloze: {
+        label: "完型填空",
+        questionTypes: [
+          "词义辨析",
+          "固定搭配",
+          "逻辑关系",
+          "上下文复现",
+          "语法结构",
+          "情感色彩",
+          "篇章衔接",
+        ],
+        causes: [
+          "词义色彩判断失误",
+          "固定搭配不熟",
+          "逻辑关系词误判",
+          "复现词没回看",
+          "语法结构判断失误",
+          "上下文主线没抓住",
+          "干扰义项带偏",
+          "句间衔接忽略",
+        ],
+      },
+    },
+  },
 };
 
-const CAUSE_OPTION_GROUPS = {
-  common: [
-    "定位慢",
-    "同义替换没识别",
-    "干扰项误判",
-    "题干审错",
-    "复盘不够具体",
-  ],
-  reading: [
-    "段落主旨抓偏",
-    "heading 关键词误导",
-    "NG / FALSE 判断混淆",
-    "细节和主旨混淆",
-    "段落匹配回查不全",
-    "原文定位句看漏",
-    "逻辑转折没抓住",
-    "指代关系没看清",
-    "限定词范围忽略",
-    "选项对比不充分",
-  ],
-  listening: [
-    "听漏转折",
-    "预测词性失败",
-    "拼写错误",
-    "单复数错误",
-    "数字日期错误",
-    "地图跟丢",
-    "速度太快没跟上",
-  ],
+const COMMON_CAUSE_OPTIONS = [
+  "定位慢",
+  "同义替换没识别",
+  "干扰项误判",
+  "题干审错",
+  "复盘不够具体",
+];
+
+const DEFAULT_EXAM = "ielts";
+const DEFAULT_SECTION_BY_EXAM = {
+  ielts: "reading",
+  kaoyan: "reading",
 };
 
 const STORAGE_KEY = "ielts-review-atlas-fallback";
@@ -82,6 +167,7 @@ const state = {
   draftImages: [],
   draftCauseTags: [],
   filters: {
+    exam: "all",
     section: "all",
     questionType: "all",
     cause: "all",
@@ -111,6 +197,7 @@ let cloudSyncInFlight = false;
 document.addEventListener("DOMContentLoaded", () => {
   cacheElements();
   bindEvents();
+  populateSectionSelect();
   populateQuestionTypeSelect();
   renderCauseSelector();
   restoreState()
@@ -135,8 +222,8 @@ function cacheElements() {
     heroTopCause: document.querySelector("#hero-top-cause"),
     heroAiStatus: document.querySelector("#hero-ai-status"),
     heroCloudStatus: document.querySelector("#hero-cloud-status"),
-    readingCount: document.querySelector("#reading-count"),
-    listeningCount: document.querySelector("#listening-count"),
+    ieltsCount: document.querySelector("#ielts-count"),
+    kaoyanCount: document.querySelector("#kaoyan-count"),
     imageCount: document.querySelector("#image-count"),
     focusSummary: document.querySelector("#focus-summary"),
     focusSummaryNote: document.querySelector("#focus-summary-note"),
@@ -144,6 +231,7 @@ function cacheElements() {
     causeBreakdown: document.querySelector("#cause-breakdown"),
     insightHighlights: document.querySelector("#insight-highlights"),
     entryForm: document.querySelector("#entry-form"),
+    entryExam: document.querySelector("#entry-exam"),
     entrySection: document.querySelector("#entry-section"),
     entrySource: document.querySelector("#entry-source"),
     entryQuestionNumber: document.querySelector("#entry-question-number"),
@@ -178,10 +266,11 @@ function cacheElements() {
     cloudLogin: document.querySelector("#cloud-login"),
     cloudSyncNow: document.querySelector("#cloud-sync-now"),
     cloudLogout: document.querySelector("#cloud-logout"),
+    filterExam: document.querySelector("#filter-exam"),
+    filterSection: document.querySelector("#filter-section"),
     filterQuestionType: document.querySelector("#filter-question-type"),
     filterCause: document.querySelector("#filter-cause"),
     filterKeyword: document.querySelector("#filter-keyword"),
-    sectionFilter: document.querySelector("#section-filter"),
     selectionSummary: document.querySelector("#selection-summary"),
     selectFiltered: document.querySelector("#select-filtered"),
     clearSelection: document.querySelector("#clear-selection"),
@@ -201,6 +290,14 @@ function bindEvents() {
       const target = document.querySelector(`#${button.dataset.scrollTarget}`);
       target?.scrollIntoView({ behavior: "smooth", block: "start" });
     });
+  });
+
+  els.entryExam.addEventListener("change", () => {
+    populateSectionSelect();
+    populateQuestionTypeSelect();
+    filterDraftCauseTagsForSection();
+    renderCauseSelector();
+    updateFormStatus("已切换考试体系和模块题型库。");
   });
 
   els.entrySection.addEventListener("change", () => {
@@ -245,17 +342,23 @@ function bindEvents() {
     renderAll();
   });
 
-  els.filterKeyword.addEventListener("input", () => {
-    state.filters.keyword = els.filterKeyword.value.trim();
+  els.filterExam.addEventListener("change", () => {
+    state.filters.exam = els.filterExam.value;
+    if (state.filters.exam === "all") {
+      state.filters.section = "all";
+    } else if (!isValidSectionForExam(state.filters.exam, state.filters.section) && state.filters.section !== "all") {
+      state.filters.section = "all";
+    }
     renderAll();
   });
 
-  els.sectionFilter.addEventListener("click", (event) => {
-    const button = event.target.closest("[data-section-filter]");
-    if (!button) {
-      return;
-    }
-    state.filters.section = button.dataset.sectionFilter;
+  els.filterSection.addEventListener("change", () => {
+    state.filters.section = els.filterSection.value;
+    renderAll();
+  });
+
+  els.filterKeyword.addEventListener("input", () => {
+    state.filters.keyword = els.filterKeyword.value.trim();
     renderAll();
   });
 
@@ -335,11 +438,11 @@ function bindEvents() {
   });
 
   els.exportJson.addEventListener("click", () => {
-    downloadFile("ielts-review-atlas.json", "application/json", JSON.stringify(exportSnapshot(), null, 2));
+    downloadFile("review-atlas.json", "application/json", JSON.stringify(exportSnapshot(), null, 2));
   });
 
   els.exportCsv.addEventListener("click", () => {
-    downloadFile("ielts-review-atlas.csv", "text/csv;charset=utf-8", buildCsv(state.entries));
+    downloadFile("review-atlas.csv", "text/csv;charset=utf-8", buildCsv(state.entries));
   });
 
   els.importJson.addEventListener("change", async (event) => {
@@ -398,9 +501,64 @@ function bindEvents() {
   }
 }
 
+function getExamConfig(exam = DEFAULT_EXAM) {
+  return EXAM_CONFIG[exam] || EXAM_CONFIG[DEFAULT_EXAM];
+}
+
+function normalizeExam(exam = DEFAULT_EXAM) {
+  return EXAM_CONFIG[exam] ? exam : DEFAULT_EXAM;
+}
+
+function getExamLabel(exam = DEFAULT_EXAM) {
+  return getExamConfig(exam).label;
+}
+
+function getSectionConfig(exam = DEFAULT_EXAM, section = DEFAULT_SECTION_BY_EXAM[DEFAULT_EXAM]) {
+  const examConfig = getExamConfig(exam);
+  return examConfig.sections[section] || examConfig.sections[DEFAULT_SECTION_BY_EXAM[normalizeExam(exam)]];
+}
+
+function getSectionLabel(exam = DEFAULT_EXAM, section = DEFAULT_SECTION_BY_EXAM[DEFAULT_EXAM]) {
+  return getSectionConfig(exam, section)?.label || "模块";
+}
+
+function getSectionCompositeLabel(exam = DEFAULT_EXAM, section = DEFAULT_SECTION_BY_EXAM[DEFAULT_EXAM]) {
+  return `${getExamLabel(exam)} · ${getSectionLabel(exam, section)}`;
+}
+
+function isValidSectionForExam(exam, section) {
+  return Boolean(getExamConfig(exam).sections[section]);
+}
+
+function getActiveFormExam() {
+  return normalizeExam(els.entryExam?.value || DEFAULT_EXAM);
+}
+
+function getActiveFormSection() {
+  const exam = getActiveFormExam();
+  const section = els.entrySection?.value || DEFAULT_SECTION_BY_EXAM[exam];
+  return isValidSectionForExam(exam, section) ? section : DEFAULT_SECTION_BY_EXAM[exam];
+}
+
+function populateSectionSelect() {
+  const exam = getActiveFormExam();
+  const examConfig = getExamConfig(exam);
+  const previousValue = els.entrySection.value;
+  const options = Object.entries(examConfig.sections);
+  els.entrySection.innerHTML = options
+    .map(([value, config]) => `<option value="${escapeHtml(value)}">${escapeHtml(config.label)}</option>`)
+    .join("");
+  if (options.some(([value]) => value === previousValue)) {
+    els.entrySection.value = previousValue;
+  } else {
+    els.entrySection.value = DEFAULT_SECTION_BY_EXAM[exam];
+  }
+}
+
 function populateQuestionTypeSelect() {
-  const section = els.entrySection.value || "reading";
-  const options = QUESTION_TYPE_OPTIONS[section] || [];
+  const exam = getActiveFormExam();
+  const section = getActiveFormSection();
+  const options = getSectionConfig(exam, section)?.questionTypes || [];
   const previousValue = els.entryQuestionType.value;
   els.entryQuestionType.innerHTML = options
     .map((option) => `<option value="${escapeHtml(option)}">${escapeHtml(option)}</option>`)
@@ -435,16 +593,16 @@ function renderCauseSelector() {
   });
 }
 
-function getAvailableCauseOptions(section = els.entrySection?.value || "reading") {
-  const specific = CAUSE_OPTION_GROUPS[section] || [];
+function getAvailableCauseOptions(exam = getActiveFormExam(), section = getActiveFormSection()) {
+  const specific = getSectionConfig(exam, section)?.causes || [];
   return uniqueValues([
-    ...CAUSE_OPTION_GROUPS.common,
+    ...COMMON_CAUSE_OPTIONS,
     ...specific,
   ]);
 }
 
-function filterDraftCauseTagsForSection(section = els.entrySection?.value || "reading") {
-  const available = new Set(getAvailableCauseOptions(section));
+function filterDraftCauseTagsForSection(section = getActiveFormSection(), exam = getActiveFormExam()) {
+  const available = new Set(getAvailableCauseOptions(exam, section));
   state.draftCauseTags = state.draftCauseTags.filter((tag) => available.has(tag));
 }
 
@@ -462,8 +620,8 @@ function renderDashboard() {
   els.heroTotalCount.textContent = String(stats.total);
   els.heroTopType.textContent = stats.topType?.label || "待积累";
   els.heroTopCause.textContent = stats.topCause?.label || "待积累";
-  els.readingCount.textContent = String(stats.bySection.reading);
-  els.listeningCount.textContent = String(stats.bySection.listening);
+  els.ieltsCount.textContent = String(stats.byExam.ielts);
+  els.kaoyanCount.textContent = String(stats.byExam.kaoyan);
   els.imageCount.textContent = String(stats.imageCount);
   els.focusSummary.textContent = stats.focusSummary.title;
   els.focusSummaryNote.textContent = stats.focusSummary.note;
@@ -513,19 +671,57 @@ function renderRankList(container, items, emptyText) {
 }
 
 function renderFilters() {
-  els.sectionFilter.querySelectorAll("[data-section-filter]").forEach((button) => {
-    button.classList.toggle("is-active", button.dataset.sectionFilter === state.filters.section);
-  });
+  hydrateExamFilter();
+  hydrateSectionFilter();
   hydrateQuestionTypeFilter();
   hydrateCauseFilter();
+  els.filterExam.value = state.filters.exam;
+  els.filterSection.value = state.filters.section;
   els.filterQuestionType.value = state.filters.questionType;
   els.filterCause.value = state.filters.cause;
   els.filterKeyword.value = state.filters.keyword;
 }
 
+function hydrateExamFilter() {
+  els.filterExam.innerHTML = [
+    '<option value="all">全部考试体系</option>',
+    ...Object.entries(EXAM_CONFIG).map(([value, config]) => `<option value="${escapeHtml(value)}">${escapeHtml(config.label)}</option>`),
+  ].join("");
+  if (![...Object.keys(EXAM_CONFIG), "all"].includes(state.filters.exam)) {
+    state.filters.exam = "all";
+  }
+}
+
+function hydrateSectionFilter() {
+  const sections = state.filters.exam === "all"
+    ? uniqueValues(
+        state.entries.map((entry) => `${entry.exam}:${entry.section}`),
+      ).map((value) => {
+        const [exam, section] = value.split(":");
+        return {
+          value,
+          label: getSectionCompositeLabel(exam, section),
+        };
+      })
+    : Object.keys(getExamConfig(state.filters.exam).sections).map((section) => ({
+        value: section,
+        label: getSectionLabel(state.filters.exam, section),
+      }));
+
+  els.filterSection.innerHTML = [
+    '<option value="all">全部模块</option>',
+    ...sections.map((option) => `<option value="${escapeHtml(option.value)}">${escapeHtml(option.label)}</option>`),
+  ].join("");
+
+  const validValues = new Set(["all", ...sections.map((option) => option.value)]);
+  if (!validValues.has(state.filters.section)) {
+    state.filters.section = "all";
+  }
+}
+
 function hydrateQuestionTypeFilter() {
   const allTypes = uniqueValues(
-    state.entries
+    getFilteredEntriesForStats()
       .map((entry) => entry.questionType)
       .filter(Boolean),
   );
@@ -541,7 +737,7 @@ function hydrateQuestionTypeFilter() {
 
 function hydrateCauseFilter() {
   const allCauses = uniqueValues(
-    state.entries.flatMap((entry) => entry.causeTags || []),
+    getFilteredEntriesForStats().flatMap((entry) => entry.causeTags || []),
   );
   const currentValue = state.filters.cause;
   els.filterCause.innerHTML = [
@@ -578,7 +774,8 @@ function renderEntryCard(entry) {
     <article class="entry-card">
       <div class="entry-card__top">
         <div class="entry-card__title">
-          <span class="tag">${escapeHtml(entry.section === "reading" ? "阅读" : "听力")}</span>
+          <span class="tag">${escapeHtml(getExamLabel(entry.exam))}</span>
+          <span class="tag">${escapeHtml(getSectionLabel(entry.exam, entry.section))}</span>
           <strong>${escapeHtml(entry.source)} · ${escapeHtml(entry.questionNumber)}</strong>
           <span class="badge">${escapeHtml(entry.questionType)}</span>
           <span class="image-count-badge">${imageCount} 张图</span>
@@ -632,8 +829,8 @@ function renderAiStatus() {
     ? `${aiStatus.provider_label} 已连接`
     : "未连接";
   els.aiSideMeta.textContent = aiStatus.available
-    ? "当前在线复盘已可用，会结合你选中的错题记录、统计信息和截图生成总结。"
-    : "还没有检测到可用的在线 AI。启动本地 server.py 或部署独立的 Cloudflare Functions 后，这里会自动显示可用状态。";
+    ? "当前在线复盘已可用，会结合你选中的雅思或考研英语错题、统计信息和截图生成总结。"
+    : "还没有检测到可用的在线 AI。接通已部署的在线接口后，这里会自动显示可用状态。";
 }
 
 function renderCloudSyncUi() {
@@ -865,7 +1062,8 @@ function saveCurrentEntry() {
   const now = Date.now();
   const entry = {
     id: state.editingId || createId(),
-    section: els.entrySection.value,
+    exam: getActiveFormExam(),
+    section: getActiveFormSection(),
     source,
     questionNumber,
     questionType,
@@ -902,6 +1100,8 @@ function startEditingEntry(entry) {
   state.editingId = entry.id;
   state.draftCauseTags = [...(entry.causeTags || [])];
   state.draftImages = deepClone(entry.images || []);
+  els.entryExam.value = normalizeExam(entry.exam);
+  populateSectionSelect();
   els.entrySection.value = entry.section;
   populateQuestionTypeSelect();
   els.entrySource.value = entry.source;
@@ -927,7 +1127,8 @@ function resetForm(options = {}) {
   state.draftImages = [];
   state.draftCauseTags = [];
   els.entryForm.reset();
-  els.entrySection.value = "reading";
+  els.entryExam.value = DEFAULT_EXAM;
+  populateSectionSelect();
   populateQuestionTypeSelect();
   els.entryDifficulty.value = "3";
   els.entryAiPriority.value = "normal";
@@ -938,10 +1139,34 @@ function resetForm(options = {}) {
   }
 }
 
+function getFilteredEntriesForStats() {
+  return state.entries.filter((entry) => {
+    if (state.filters.exam !== "all" && entry.exam !== state.filters.exam) {
+      return false;
+    }
+    if (state.filters.section === "all") {
+      return true;
+    }
+    if (state.filters.exam === "all") {
+      return `${entry.exam}:${entry.section}` === state.filters.section;
+    }
+    return entry.section === state.filters.section;
+  });
+}
+
 function getFilteredEntries() {
   return state.entries.filter((entry) => {
-    if (state.filters.section !== "all" && entry.section !== state.filters.section) {
+    if (state.filters.exam !== "all" && entry.exam !== state.filters.exam) {
       return false;
+    }
+    if (state.filters.section !== "all") {
+      if (state.filters.exam === "all") {
+        if (`${entry.exam}:${entry.section}` !== state.filters.section) {
+          return false;
+        }
+      } else if (entry.section !== state.filters.section) {
+        return false;
+      }
     }
     if (state.filters.questionType !== "all" && entry.questionType !== state.filters.questionType) {
       return false;
@@ -954,6 +1179,8 @@ function getFilteredEntries() {
     }
 
     const haystack = [
+      getExamLabel(entry.exam),
+      getSectionLabel(entry.exam, entry.section),
       entry.source,
       entry.questionNumber,
       entry.questionType,
@@ -974,36 +1201,34 @@ function getFilteredEntries() {
 }
 
 function buildStats(entries) {
-  const bySection = {
-    reading: entries.filter((entry) => entry.section === "reading").length,
-    listening: entries.filter((entry) => entry.section === "listening").length,
+  const byExam = {
+    ielts: entries.filter((entry) => entry.exam === "ielts").length,
+    kaoyan: entries.filter((entry) => entry.exam === "kaoyan").length,
   };
+  const areaRanking = countLabels(entries.map((entry) => getSectionCompositeLabel(entry.exam, entry.section)));
   const typeRanking = countLabels(entries.map((entry) => entry.questionType));
   const causeRanking = countLabels(entries.flatMap((entry) => entry.causeTags || []));
+  const topArea = areaRanking[0] || null;
   const topType = typeRanking[0] || null;
   const topCause = causeRanking[0] || null;
   const imageCount = entries.reduce((sum, entry) => sum + (entry.images?.length || 0), 0);
-  const weakerSection = bySection.reading === bySection.listening
-    ? "reading"
-    : bySection.reading > bySection.listening
-      ? "reading"
-      : "listening";
 
   let title = "先录几题";
-  let note = "错题数量起来后，这里会告诉你更该先补哪一边。";
+  let note = "错题数量起来后，这里会告诉你更该先补哪个考试体系和模块。";
   if (entries.length) {
-    const weakerLabel = weakerSection === "reading" ? "阅读" : "听力";
     const typeLabel = topType?.label || "当前主错题型";
     const causeLabel = topCause?.label || "主要失误";
-    title = `${weakerLabel}先补 ${typeLabel}`;
+    title = `${topArea?.label || "当前薄弱区"}先补 ${typeLabel}`;
     note = `最近最常见的错因是“${causeLabel}”，下一轮练题时优先针对这一点做动作设计。`;
   }
 
   return {
     total: entries.length,
-    bySection,
+    byExam,
+    areaRanking,
     typeRanking,
     causeRanking,
+    topArea,
     topType,
     topCause,
     imageCount,
@@ -1029,7 +1254,7 @@ async function refreshAiStatus() {
     available: false,
     provider_label: "GemAI / OpenAI Compatible",
     review_model: "gpt-5.1-thinking",
-    detail: "请通过本地 server.py 或独立部署的 AI 接口提供在线能力。",
+    detail: "请接通已部署的在线 AI 接口。",
   };
 
   try {
@@ -1073,6 +1298,7 @@ async function runAiReview() {
     note: els.aiNote.value.trim(),
     entries: entries.map((entry) => ({
       id: entry.id,
+      exam: entry.exam,
       section: entry.section,
       source: entry.source,
       question_number: entry.questionNumber,
@@ -1111,7 +1337,10 @@ async function runAiReview() {
       throw new Error(result.error || `请求失败：${response.status}`);
     }
     state.latestAiReview = result;
-    els.aiRequestStatus.textContent = `分析完成 · ${result.provider_label || state.aiStatus.provider_label}`;
+    const quotaHint = Number.isFinite(Number(result.daily_remaining))
+      ? ` · 今日剩余 ${Math.max(0, Number(result.daily_remaining || 0))} 次`
+      : "";
+    els.aiRequestStatus.textContent = `分析完成 · ${result.provider_label || state.aiStatus.provider_label}${quotaHint}`;
     renderAiResult();
     await persistState({ touch: true });
   } catch (error) {
@@ -1135,8 +1364,8 @@ function buildAiStatsPayload(entries) {
   const stats = buildStats(entries);
   return {
     total_entries: stats.total,
-    reading_entries: stats.bySection.reading,
-    listening_entries: stats.bySection.listening,
+    by_exam: stats.byExam,
+    top_areas: stats.areaRanking.slice(0, 5),
     top_question_types: stats.typeRanking.slice(0, 5),
     top_causes: stats.causeRanking.slice(0, 5),
     with_images: entries.filter((entry) => (entry.images?.length || 0) > 0).length,
@@ -1173,7 +1402,7 @@ function collectAiImages(entries) {
 
 function exportSnapshot() {
   return {
-    version: 2,
+    version: 3,
     exportedAt: new Date().toISOString(),
     updatedAt: state.updatedAt || Date.now(),
     entries: state.entries,
@@ -1194,12 +1423,18 @@ function importSnapshot(payload) {
 }
 
 function normalizeImportedEntry(entry) {
+  const exam = normalizeExam(entry.exam || entry.examType || DEFAULT_EXAM);
+  const rawSection = String(entry.section || entry.module || "").trim();
+  const fallbackSection = DEFAULT_SECTION_BY_EXAM[exam];
+  const normalizedSection = isValidSectionForExam(exam, rawSection) ? rawSection : fallbackSection;
+  const defaultQuestionType = getSectionConfig(exam, normalizedSection)?.questionTypes?.[0] || "Multiple Choice";
   return {
     id: entry.id || createId(),
-    section: entry.section === "listening" ? "listening" : "reading",
+    exam,
+    section: normalizedSection,
     source: String(entry.source || "").trim(),
     questionNumber: String(entry.questionNumber || entry.question_number || "").trim(),
-    questionType: String(entry.questionType || entry.question_type || "").trim() || "Multiple Choice",
+    questionType: String(entry.questionType || entry.question_type || "").trim() || defaultQuestionType,
     wrongAnswer: String(entry.wrongAnswer || entry.wrong_answer || "").trim(),
     correctAnswer: String(entry.correctAnswer || entry.correct_answer || "").trim(),
     errorReason: String(entry.errorReason || entry.error_reason || "").trim(),
@@ -1230,6 +1465,7 @@ function normalizeImportedEntry(entry) {
 
 function buildCsv(entries) {
   const headers = [
+    "考试体系",
     "模块",
     "题目来源",
     "题号",
@@ -1249,7 +1485,8 @@ function buildCsv(entries) {
   ];
 
   const rows = entries.map((entry) => [
-    entry.section === "reading" ? "阅读" : "听力",
+    getExamLabel(entry.exam),
+    getSectionLabel(entry.exam, entry.section),
     entry.source,
     entry.questionNumber,
     entry.questionType,

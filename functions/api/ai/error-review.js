@@ -17,7 +17,7 @@ export async function onRequest(context) {
 
   try {
     const payload = await context.request.json();
-    const result = await requestErrorReview(payload, context.env);
+    const result = await requestErrorReview(payload, context.env, context.request);
     return jsonResponse(result);
   } catch (error) {
     if (error instanceof ApiError) {

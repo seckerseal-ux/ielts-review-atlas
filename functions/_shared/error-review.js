@@ -3,6 +3,9 @@ const DEFAULT_ERROR_REVIEW_MODEL = "gpt-5.1-thinking";
 const MAX_ERROR_REVIEW_ENTRIES = 40;
 const MAX_ERROR_REVIEW_IMAGES = 6;
 const MAX_ERROR_REVIEW_IMAGE_DATA_URL_CHARS = 6 * 1024 * 1024;
+const AI_DAILY_LIMIT = 10;
+const DAILY_LIMIT_UTC_OFFSET_MINUTES = 8 * 60;
+const AI_RATE_LIMIT_PREFIX = "limit:error-review";
 
 const ERROR_REVIEW_SCHEMA = {
   type: "object",
@@ -79,9 +82,9 @@ const ERROR_REVIEW_SCHEMA = {
 };
 
 const ERROR_REVIEW_INSTRUCTIONS = `
-You are a strict but encouraging IELTS Reading and Listening mistake-review coach.
+You are a strict but encouraging English exam mistake-review coach.
 You will receive:
-1. Structured wrong-answer journal entries for IELTS Reading and Listening.
+1. Structured wrong-answer journal entries for IELTS or Chinese postgraduate entrance exam English.
 2. Aggregated statistics such as recurring question types, error-cause tags, and recent reflections.
 3. Optional user goal notes for this review round.
 4. Optional uploaded screenshots related to the wrong questions.
@@ -90,7 +93,8 @@ Return feedback in Simplified Chinese.
 Ground every judgment in the supplied entries, statistics, and screenshots.
 Do not invent details that are not visible in the data.
 The main job is to help the candidate see recurring question types, recurring causes, and what to do differently next time.
-When screenshots are present, use them to explain likely distraction points, paraphrase traps, layout issues, or why the candidate may have missed the clue.
+Supported modules include IELTS Reading, IELTS Listening, Kaoyan Reading, Kaoyan New Question Types, and Kaoyan Cloze.
+When screenshots are present, use them to explain likely distraction points, paraphrase traps, layout issues, discourse clues, attitude shifts, or why the candidate may have missed the clue.
 Keep the tone concise, actionable, and coach-like.
 For recurring_question_types and recurring_error_causes, use counts that stay close to the supplied statistics.
 reflection_highlights should extract the most valuable review takeaways already visible in the candidate's own notes.
@@ -177,12 +181,94 @@ function sanitizeStringList(values, limit = 8, itemLimit = 80) {
   return cleaned;
 }
 
+function getRateLimitStore(env) {
+  return env.REVIEW_ATLAS_SYNC || null;
+}
+
+function getClientIp(request) {
+  const direct = String(request.headers.get("CF-Connecting-IP") || request.headers.get("X-Real-IP") || "").trim();
+  if (direct) {
+    return direct.slice(0, 80);
+  }
+  const forwarded = String(request.headers.get("X-Forwarded-For") || "").trim();
+  if (!forwarded) {
+    return "";
+  }
+  return forwarded.split(",")[0].trim().slice(0, 80);
+}
+
+function getDailyLimitBucket(now = Date.now()) {
+  const shifted = now + DAILY_LIMIT_UTC_OFFSET_MINUTES * 60 * 1000;
+  return new Date(shifted).toISOString().slice(0, 10);
+}
+
+function getDailyLimitTtl(now = Date.now()) {
+  const offsetMs = DAILY_LIMIT_UTC_OFFSET_MINUTES * 60 * 1000;
+  const shifted = new Date(now + offsetMs);
+  const nextDayShifted = Date.UTC(
+    shifted.getUTCFullYear(),
+    shifted.getUTCMonth(),
+    shifted.getUTCDate() + 1,
+    0,
+    0,
+    0,
+    0,
+  );
+  const nextReset = nextDayShifted - offsetMs;
+  return Math.max(3600, Math.ceil((nextReset - now) / 1000) + 3600);
+}
+
+function getDailyLimitKey(ip, bucket) {
+  return `${AI_RATE_LIMIT_PREFIX}:${bucket}:${encodeURIComponent(ip)}`;
+}
+
+async function consumeDailyAiQuota(env, request) {
+  const store = getRateLimitStore(env);
+  const ip = getClientIp(request);
+  if (!store || !ip) {
+    return null;
+  }
+
+  const now = Date.now();
+  const bucket = getDailyLimitBucket(now);
+  const key = getDailyLimitKey(ip, bucket);
+  const record = (await store.get(key, { type: "json" })) || {
+    ip,
+    bucket,
+    count: 0,
+  };
+
+  if (Number(record.count || 0) >= AI_DAILY_LIMIT) {
+    throw new ApiError(`当前 IP 今日 AI 复盘次数已达 ${AI_DAILY_LIMIT} 次，请明天再试。`, 429);
+  }
+
+  const nextRecord = {
+    ip,
+    bucket,
+    count: Number(record.count || 0) + 1,
+    updatedAt: now,
+  };
+  await store.put(key, JSON.stringify(nextRecord), {
+    expirationTtl: getDailyLimitTtl(now),
+  });
+
+  return {
+    daily_limit: AI_DAILY_LIMIT,
+    daily_used: nextRecord.count,
+    daily_remaining: Math.max(0, AI_DAILY_LIMIT - nextRecord.count),
+  };
+}
+
 function normalizeEntry(entry) {
   if (!entry || typeof entry !== "object") {
     throw new ApiError("错题条目格式不正确。", 400);
   }
 
-  const section = sanitizeShortText(entry.section, 20).toLowerCase() === "listening" ? "listening" : "reading";
+  const exam = sanitizeShortText(entry.exam, 20).toLowerCase() === "kaoyan" ? "kaoyan" : "ielts";
+  const rawSection = sanitizeShortText(entry.section, 20).toLowerCase();
+  const section = exam === "ielts"
+    ? (rawSection === "listening" ? "listening" : "reading")
+    : (["reading", "new_question", "cloze"].includes(rawSection) ? rawSection : "reading");
   const source = sanitizeShortText(entry.source, 120);
   const questionNumber = sanitizeShortText(entry.question_number, 40);
   const questionType = sanitizeShortText(entry.question_type, 80);
@@ -193,6 +279,7 @@ function normalizeEntry(entry) {
 
   return {
     id: sanitizeShortText(entry.id, 80),
+    exam,
     section,
     source,
     question_number: questionNumber,
@@ -304,7 +391,7 @@ function clampPayload(payload) {
   };
 }
 
-export async function requestErrorReview(payload, env) {
+export async function requestErrorReview(payload, env, request) {
   const rawEntries = Array.isArray(payload?.entries) ? payload.entries : [];
   const rawImages = Array.isArray(payload?.images) ? payload.images : [];
   if (!rawEntries.length) {
@@ -330,12 +417,14 @@ export async function requestErrorReview(payload, env) {
   const focusGoal = sanitizeShortText(payload?.focus_goal, 160);
   const note = sanitizeShortText(payload?.note, 500);
   const stats = payload?.stats && typeof payload.stats === "object" ? payload.stats : {};
+  const quota = await consumeDailyAiQuota(env, request);
 
   const userContent = [
     {
       type: "text",
       text: [
-        "请基于以下 IELTS 阅读/听力错题档案做结构化复盘。",
+        "请基于以下英语考试错题档案做结构化复盘。",
+        "这些条目可能来自雅思阅读、雅思听力、考研英语阅读、考研英语新题型或考研英语完型填空。",
         "",
         "本轮目标:",
         focusGoal || "未提供",
@@ -408,5 +497,6 @@ export async function requestErrorReview(payload, env) {
     provider_label: providerLabel,
     review_model: model,
     review,
+    ...quota,
   };
 }

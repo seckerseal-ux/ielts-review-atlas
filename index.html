@@ -37,15 +37,15 @@
           </div>
           <div class="stat-card">
             <span class="stat-card__label">高频题型</span>
-            <strong class="stat-card__value stat-card__value--small" id="hero-top-type">待积累</strong>
+            <strong class="stat-card__value stat-card__value--small" id="hero-top-type">还没形成</strong>
           </div>
           <div class="stat-card">
             <span class="stat-card__label">主要失误</span>
-            <strong class="stat-card__value stat-card__value--small" id="hero-top-cause">待积累</strong>
+            <strong class="stat-card__value stat-card__value--small" id="hero-top-cause">还没形成</strong>
           </div>
           <div class="stat-card">
             <span class="stat-card__label">AI 状态</span>
-            <strong class="stat-card__value stat-card__value--small" id="hero-ai-status">检测中</strong>
+            <strong class="stat-card__value stat-card__value--small" id="hero-ai-status">正在检查</strong>
           </div>
           <div class="stat-card">
             <span class="stat-card__label">云同步</span>
@@ -54,37 +54,62 @@
         </aside>
       </header>
 
-      <section class="panel workflow">
-        <div class="section-head">
+      <section class="panel glance-strip">
+        <button class="glance-card" data-scroll-target="capture" type="button">
+          <span class="glance-card__eyebrow">录入</span>
+          <strong>先记一题</strong>
+          <p>从一道最典型的错题开始，不用一次写太多。</p>
+        </button>
+        <button class="glance-card" data-scroll-target="dashboard" type="button">
+          <span class="glance-card__eyebrow">统计</span>
+          <strong>看今天的薄弱点</strong>
+          <p>先看高频题型和错因，再决定要不要继续展开。</p>
+        </button>
+        <button class="glance-card" data-scroll-target="journal" type="button">
+          <span class="glance-card__eyebrow">档案</span>
+          <strong>轻量浏览错题</strong>
+          <p>错题卡默认只看摘要，展开时再读完整细节。</p>
+        </button>
+        <button class="glance-card" data-scroll-target="ai-review" type="button">
+          <span class="glance-card__eyebrow">AI</span>
+          <strong>最后再做总结</strong>
+          <p>把筛选后的重点题交给 AI，不会一上来信息爆满。</p>
+        </button>
+      </section>
+
+      <details class="panel fold-panel workflow" id="workflow">
+        <summary class="fold-panel__summary">
           <div>
             <p class="eyebrow">复盘路径</p>
             <h2>先记录细节，再沉淀模式</h2>
           </div>
-          <p class="section-head__hint">适合每天刷题后立刻补录，也适合周末统一做整批复盘。</p>
+          <p class="section-head__hint">展开查看 4 步复盘路径</p>
+        </summary>
+        <div class="fold-panel__body">
+          <div class="workflow-grid">
+            <article class="workflow-card">
+              <span class="workflow-card__step">01</span>
+              <h3>录入错题</h3>
+              <p>按考试体系、模块、题型、错因、定位和同义替换把单题信息写清楚。</p>
+            </article>
+            <article class="workflow-card">
+              <span class="workflow-card__step">02</span>
+              <h3>上传截图</h3>
+              <p>把题干、选项、定位句或听力原文截图一起存档，方便 AI 看上下文。</p>
+            </article>
+            <article class="workflow-card">
+              <span class="workflow-card__step">03</span>
+              <h3>看本地统计</h3>
+              <p>页面会自动区分雅思与考研英语，分别汇总高频题型、常见错因和失分倾向。</p>
+            </article>
+            <article class="workflow-card">
+              <span class="workflow-card__step">04</span>
+              <h3>触发 AI 总结</h3>
+              <p>让 AI 结合你的记录和图片输出一份下一轮复习更好执行的复盘总结。</p>
+            </article>
+          </div>
         </div>
-        <div class="workflow-grid">
-          <article class="workflow-card">
-            <span class="workflow-card__step">01</span>
-            <h3>录入错题</h3>
-            <p>按考试体系、模块、题型、错因、定位和同义替换把单题信息写清楚。</p>
-          </article>
-          <article class="workflow-card">
-            <span class="workflow-card__step">02</span>
-            <h3>上传截图</h3>
-            <p>把题干、选项、定位句或听力原文截图一起存档，方便 AI 看上下文。</p>
-          </article>
-          <article class="workflow-card">
-            <span class="workflow-card__step">03</span>
-            <h3>看本地统计</h3>
-            <p>页面会自动区分雅思与考研英语，分别汇总高频题型、常见错因和失分倾向。</p>
-          </article>
-          <article class="workflow-card">
-            <span class="workflow-card__step">04</span>
-            <h3>触发 AI 总结</h3>
-            <p>让 AI 结合你的记录和图片输出一份下一轮复习更好执行的复盘总结。</p>
-          </article>
-        </div>
-      </section>
+      </details>
 
       <section class="panel dashboard" id="dashboard">
         <div class="section-head">
@@ -112,33 +137,39 @@
           </article>
           <article class="metric-card">
             <span class="metric-card__label">本周重点</span>
-            <strong class="metric-card__value metric-card__value--small" id="focus-summary">先录几题</strong>
-            <p class="metric-card__note" id="focus-summary-note">录入后这里会自动给你一句最值得盯住的训练提醒。</p>
+            <strong class="metric-card__value metric-card__value--small" id="focus-summary">先记一题</strong>
+            <p class="metric-card__note" id="focus-summary-note">有几条记录以后，这里会给你一句更像学习提醒的总结。</p>
           </article>
         </div>
-        <div class="analytics-grid">
-          <article class="analysis-card">
-            <div class="analysis-card__head">
-              <h3>高频题型</h3>
-              <span class="badge">自动累计</span>
-            </div>
-            <div class="rank-list" id="type-breakdown"></div>
-          </article>
-          <article class="analysis-card">
-            <div class="analysis-card__head">
-              <h3>常见错因</h3>
-              <span class="badge">结构化标签</span>
-            </div>
-            <div class="rank-list" id="cause-breakdown"></div>
-          </article>
-          <article class="analysis-card">
-            <div class="analysis-card__head">
-              <h3>近期复盘心得</h3>
-              <span class="badge">来自你的记录</span>
-            </div>
-            <div class="insight-stack" id="insight-highlights"></div>
-          </article>
-        </div>
+        <details class="subpanel-fold">
+          <summary class="subpanel-fold__summary">
+            <span>展开统计细节</span>
+            <span class="subpanel-fold__hint">高频题型、错因、近期心得</span>
+          </summary>
+          <div class="analytics-grid">
+            <article class="analysis-card">
+              <div class="analysis-card__head">
+                <h3>高频题型</h3>
+                <span class="badge">自动累计</span>
+              </div>
+              <div class="rank-list" id="type-breakdown"></div>
+            </article>
+            <article class="analysis-card">
+              <div class="analysis-card__head">
+                <h3>常见错因</h3>
+                <span class="badge">结构化标签</span>
+              </div>
+              <div class="rank-list" id="cause-breakdown"></div>
+            </article>
+            <article class="analysis-card">
+              <div class="analysis-card__head">
+                <h3>近期复盘心得</h3>
+                <span class="badge">来自你的记录</span>
+              </div>
+              <div class="insight-stack" id="insight-highlights"></div>
+            </article>
+          </div>
+        </details>
       </section>
 
       <div class="workspace-grid">
@@ -273,7 +304,7 @@
             <div class="form-actions">
               <button class="button button--primary" id="save-entry" type="submit">保存错题</button>
               <button class="button button--ghost" id="reset-entry-form" type="button">清空表单</button>
-              <span class="form-status" id="entry-form-status">数据会自动保存在本地浏览器。</span>
+              <span class="form-status" id="entry-form-status">这页会自动保存，不用担心白填。</span>
             </div>
           </form>
         </section>
@@ -286,59 +317,68 @@
             </div>
           </div>
           <div class="tool-stack">
-            <article class="note-card">
-              <h3>导出备份</h3>
-              <p>支持导出 JSON 和 CSV，方便你继续整理到表格或者同步到别的设备。</p>
-              <div class="inline-actions">
-                <button class="button button--ghost button--small" id="export-json" type="button">导出 JSON</button>
-                <button class="button button--ghost button--small" id="export-csv" type="button">导出 CSV</button>
-              </div>
-            </article>
-            <article class="note-card">
-              <h3>导入历史</h3>
-              <p>如果你换浏览器或想恢复之前的记录，可以把导出的 JSON 导回当前页面。</p>
-              <div class="inline-actions">
-                <label class="button button--ghost button--small">
-                  导入 JSON
-                  <input id="import-json" type="file" accept="application/json" hidden />
-                </label>
-              </div>
-            </article>
-            <article class="note-card">
-              <h3>推荐录法</h3>
-              <p>单题最关键的是写清“为什么会错”和“下一次怎么避免”，不是只记正确答案。</p>
-            </article>
-            <article class="note-card">
-              <h3>AI 说明</h3>
-              <p id="ai-side-meta">AI 会读取你选中的错题、结构化统计和截图，一起做分考试体系的复盘总结。</p>
-            </article>
-            <article class="note-card">
-              <h3>云端同步</h3>
-              <div class="cloud-status-stack">
-                <span class="badge badge--cloud" id="cloud-sync-status">云端同步：检测中</span>
-                <p id="cloud-sync-meta">登录同一个同步账号后，这个错题库会自动备份到云端，避免只保留在当前浏览器。</p>
+            <details class="note-card note-card--fold">
+              <summary class="note-card__summary">
+                <h3>导出与备份</h3>
+                <p>需要时再展开，不会常驻占满侧栏。</p>
+              </summary>
+              <div class="note-card__content">
+                <p>支持导出 JSON 和 CSV，方便你继续整理到表格或者同步到别的设备。</p>
                 <div class="inline-actions">
-                  <span class="entry-chip" id="cloud-account-chip">当前：本地模式</span>
-                  <span class="entry-chip" id="cloud-last-sync-chip">最近同步：尚未同步</span>
+                  <button class="button button--ghost button--small" id="export-json" type="button">导出 JSON</button>
+                  <button class="button button--ghost button--small" id="export-csv" type="button">导出 CSV</button>
+                </div>
+                <p>如果你换浏览器或想恢复之前的记录，可以把导出的 JSON 导回当前页面。</p>
+                <div class="inline-actions">
+                  <label class="button button--ghost button--small">
+                    导入 JSON
+                    <input id="import-json" type="file" accept="application/json" hidden />
+                  </label>
                 </div>
               </div>
-              <form class="cloud-form" id="cloud-auth-form">
-                <label>
-                  同步账号
-                  <input id="cloud-account" type="text" maxlength="48" placeholder="如 review-atlas-01" />
-                </label>
-                <label>
-                  同步口令
-                  <input id="cloud-password" type="password" maxlength="72" placeholder="至少 6 位" />
-                </label>
-                <div class="inline-actions">
-                  <button class="button button--ghost button--small" id="cloud-register" type="button">注册</button>
-                  <button class="button button--ghost button--small" id="cloud-login" type="button">登录</button>
-                  <button class="button button--ghost button--small" id="cloud-sync-now" type="button">立即同步</button>
-                  <button class="button button--ghost button--small" id="cloud-logout" type="button">退出</button>
+            </details>
+            <details class="note-card note-card--fold">
+              <summary class="note-card__summary">
+                <h3>推荐录法</h3>
+                <p>只在需要时展开看提示。</p>
+              </summary>
+              <div class="note-card__content">
+                <p>单题最关键的是写清“为什么会错”和“下一次怎么避免”，不是只记正确答案。</p>
+                <p id="ai-side-meta">AI 会读取你选中的错题、结构化统计和截图，一起做分考试体系的复盘总结。</p>
+              </div>
+            </details>
+            <details class="note-card note-card--fold" open>
+              <summary class="note-card__summary">
+                <h3>云端同步</h3>
+                <p>这一项默认展开，方便你登录和查看同步状态。</p>
+              </summary>
+              <div class="note-card__content">
+                <div class="cloud-status-stack">
+                  <span class="badge badge--cloud" id="cloud-sync-status">云端同步：正在检查</span>
+                  <p id="cloud-sync-meta">登录同一个同步账号后，这个错题库会自动备份到云端，避免只保留在当前浏览器。</p>
+                  <div class="inline-actions">
+                    <span class="entry-chip" id="cloud-account-chip">当前：本地模式</span>
+                    <span class="entry-chip" id="cloud-last-sync-chip">最近同步：尚未同步</span>
+                  </div>
                 </div>
-              </form>
-            </article>
+                <form class="cloud-form" id="cloud-auth-form">
+                  <label>
+                    同步账号
+                    <input id="cloud-account" type="text" maxlength="48" placeholder="如 review-atlas-01" />
+                  </label>
+                  <label>
+                    同步口令
+                    <input id="cloud-password" type="password" maxlength="72" placeholder="至少 6 位" />
+                  </label>
+                  <div class="inline-actions">
+                    <button class="button button--ghost button--small" id="cloud-register" type="button">注册</button>
+                    <button class="button button--ghost button--small" id="cloud-login" type="button">登录</button>
+                    <button class="button button--ghost button--small" id="cloud-sync-now" type="button">立即同步</button>
+                    <button class="button button--ghost button--small" id="cloud-logout" type="button">退出</button>
+                  </div>
+                </form>
+              </div>
+            </details>
           </div>
         </aside>
       </div>
@@ -410,7 +450,7 @@
           </label>
           <div class="ai-controls__actions">
             <button class="button button--primary" id="run-ai-review" type="button">生成 AI 复盘总结</button>
-            <span class="ai-controls__status" id="ai-request-status">等待分析</span>
+            <span class="ai-controls__status" id="ai-request-status">选好错题后再开始</span>
           </div>
         </div>
         <div class="ai-result" id="ai-result"></div>

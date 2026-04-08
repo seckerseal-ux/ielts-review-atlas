@@ -98,6 +98,52 @@ textarea {
   backdrop-filter: blur(16px);
 }
 
+.glance-strip {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+  padding: 18px;
+}
+
+.glance-card {
+  display: grid;
+  gap: 10px;
+  padding: 18px;
+  width: 100%;
+  border: 1px solid var(--line);
+  appearance: none;
+  border-radius: 22px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.86), rgba(255, 255, 255, 0.68)),
+    radial-gradient(circle at top right, rgba(31, 123, 120, 0.12), transparent 42%);
+  box-shadow: 0 12px 28px rgba(24, 33, 41, 0.08);
+  text-align: left;
+  transition: transform 160ms ease, box-shadow 160ms ease, border-color 160ms ease;
+}
+
+.glance-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 16px 34px rgba(24, 33, 41, 0.12);
+  border-color: rgba(31, 123, 120, 0.18);
+}
+
+.glance-card__eyebrow {
+  color: var(--accent);
+  font-size: 0.76rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.glance-card strong {
+  font-size: 1.04rem;
+}
+
+.glance-card p {
+  font-size: 0.92rem;
+  line-height: 1.58;
+}
+
 .hero {
   display: grid;
   grid-template-columns: minmax(0, 1.45fr) minmax(280px, 380px);
@@ -291,6 +337,67 @@ p {
 .section-head__hint {
   max-width: 34ch;
   text-align: right;
+}
+
+.fold-panel__summary,
+.subpanel-fold__summary,
+.note-card__summary {
+  display: flex;
+  justify-content: space-between;
+  align-items: end;
+  gap: 18px;
+  cursor: pointer;
+  list-style: none;
+}
+
+.fold-panel__summary::-webkit-details-marker,
+.subpanel-fold__summary::-webkit-details-marker,
+.note-card__summary::-webkit-details-marker {
+  display: none;
+}
+
+.fold-panel__summary::after,
+.subpanel-fold__summary::after,
+.note-card__summary::after {
+  content: "+";
+  width: 34px;
+  height: 34px;
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: rgba(31, 43, 53, 0.08);
+  color: var(--ink);
+  font-size: 1.18rem;
+}
+
+.fold-panel[open] .fold-panel__summary::after,
+.subpanel-fold[open] .subpanel-fold__summary::after,
+.note-card--fold[open] .note-card__summary::after {
+  content: "-";
+}
+
+.fold-panel__body,
+.note-card__content {
+  margin-top: 18px;
+}
+
+.subpanel-fold {
+  margin-top: 18px;
+  padding: 16px;
+  border-radius: 22px;
+  background: rgba(255, 255, 255, 0.5);
+  border: 1px dashed rgba(31, 43, 53, 0.12);
+}
+
+.subpanel-fold__summary {
+  align-items: center;
+}
+
+.subpanel-fold__hint {
+  color: var(--ink-soft);
+  font-size: 0.9rem;
 }
 
 .dashboard-grid {
@@ -579,6 +686,19 @@ textarea:focus,
   gap: 10px;
 }
 
+.note-card--fold {
+  padding: 16px 18px;
+}
+
+.note-card__summary p {
+  max-width: 28ch;
+}
+
+.note-card__summary h3,
+.fold-panel__summary h2 {
+  line-height: 1.15;
+}
+
 .cloud-form label {
   font-size: 0.92rem;
 }
@@ -622,6 +742,7 @@ textarea:focus,
   padding: 18px;
   display: grid;
   gap: 14px;
+  box-shadow: 0 10px 24px rgba(24, 33, 41, 0.06);
 }
 
 .entry-card__top {
@@ -660,8 +781,25 @@ textarea:focus,
   font-size: 0.92rem;
 }
 
+.entry-card__preview {
+  padding: 14px 16px;
+  border-radius: var(--radius-md);
+  background: linear-gradient(180deg, rgba(52, 83, 106, 0.08), rgba(52, 83, 106, 0.04));
+  border: 1px solid rgba(52, 83, 106, 0.08);
+}
+
+.entry-card__preview p {
+  color: var(--ink);
+  line-height: 1.62;
+}
+
 .entry-card__body {
   grid-template-columns: repeat(2, minmax(0, 1fr));
+  display: none;
+}
+
+.entry-card__body.is-visible {
+  display: grid;
 }
 
 .entry-card__field {
@@ -685,6 +823,11 @@ textarea:focus,
 
 .entry-card__footer {
   justify-content: space-between;
+}
+
+.entry-card.is-expanded {
+  background: rgba(255, 255, 255, 0.84);
+  border-color: rgba(31, 123, 120, 0.16);
 }
 
 .entry-chip {
@@ -738,7 +881,7 @@ textarea:focus,
 }
 
 .ai-sections {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: 1fr;
 }
 
 .ai-section {
@@ -775,12 +918,17 @@ textarea:focus,
 }
 
 @media (max-width: 1100px) {
+  .glance-strip {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .hero,
   .workspace-grid {
     grid-template-columns: 1fr;
   }
 
   .dashboard-grid,
+  .glance-strip,
   .analytics-grid,
   .workflow-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -806,7 +954,10 @@ textarea:focus,
   .toolbar,
   .upload-panel,
   .entry-card__top,
-  .entry-card__footer {
+  .entry-card__footer,
+  .fold-panel__summary,
+  .subpanel-fold__summary,
+  .note-card__summary {
     flex-direction: column;
     align-items: stretch;
   }
@@ -816,6 +967,7 @@ textarea:focus,
   }
 
   .dashboard-grid,
+  .glance-strip,
   .analytics-grid,
   .workflow-grid,
   .form-grid,

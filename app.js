@@ -163,6 +163,7 @@ const state = {
   updatedAt: 0,
   entries: [],
   selectedIds: [],
+  expandedEntryIds: [],
   editingId: null,
   draftImages: [],
   draftCauseTags: [],
@@ -178,14 +179,14 @@ const state = {
     provider_label: "GemAI / OpenAI Compatible",
     base_url: "",
     review_model: "gpt-5.1-thinking",
-    detail: "检测中",
+    detail: "正在检查",
   },
   cloud: {
     ...loadCloudSyncSession(),
     syncing: false,
     statusTone: "info",
     statusMessage: "未登录",
-    statusDetail: "登录同一个同步账号后，这个错题库会自动备份到云端，避免只保留在当前浏览器。",
+    statusDetail: "登上同一个同步账号后，记录会自动备份到云端，换设备也能接着用。",
   },
   latestAiReview: null,
 };
@@ -297,14 +298,14 @@ function bindEvents() {
     populateQuestionTypeSelect();
     filterDraftCauseTagsForSection();
     renderCauseSelector();
-    updateFormStatus("已切换考试体系和模块题型库。");
+    updateFormStatus("题型和标签已经换好了。");
   });
 
   els.entrySection.addEventListener("change", () => {
     populateQuestionTypeSelect();
     filterDraftCauseTagsForSection();
     renderCauseSelector();
-    updateFormStatus("已切换题型库。");
+    updateFormStatus("题型已经切换。");
   });
 
   els.entryForm.addEventListener("submit", async (event) => {
@@ -314,7 +315,7 @@ function bindEvents() {
       await persistState({ touch: true });
       renderAll();
       resetForm({ preserveStatus: true });
-      updateFormStatus("错题已保存，本地统计已更新。");
+      updateFormStatus("这条已经记下来了。");
     } catch (error) {
       updateFormStatus(error.message || "保存失败，请重试。", true);
     }
@@ -322,7 +323,7 @@ function bindEvents() {
 
   els.resetEntryForm.addEventListener("click", () => {
     resetForm();
-    updateFormStatus("表单已清空。");
+    updateFormStatus("已经清空，可以重新填。");
   });
 
   els.imageInput.addEventListener("change", async (event) => {
@@ -392,6 +393,16 @@ function bindEvents() {
       return;
     }
 
+    if (entryAction === "toggle") {
+      if (state.expandedEntryIds.includes(entryId)) {
+        state.expandedEntryIds = state.expandedEntryIds.filter((id) => id !== entryId);
+      } else {
+        state.expandedEntryIds = [...state.expandedEntryIds, entryId];
+      }
+      renderAll();
+      return;
+    }
+
     if (entryAction === "duplicate") {
       const duplicated = {
         ...deepClone(entry),
@@ -402,7 +413,7 @@ function bindEvents() {
       state.entries.unshift(duplicated);
       await persistState({ touch: true });
       renderAll();
-      updateFormStatus("已复制这条错题，你可以继续修改后保存。");
+      updateFormStatus("已经复制一份，你可以接着改。");
       return;
     }
 
@@ -413,12 +424,13 @@ function bindEvents() {
       }
       state.entries = state.entries.filter((item) => item.id !== entryId);
       state.selectedIds = state.selectedIds.filter((id) => id !== entryId);
+      state.expandedEntryIds = state.expandedEntryIds.filter((id) => id !== entryId);
       if (state.editingId === entryId) {
         resetForm();
       }
       await persistState({ touch: true });
       renderAll();
-      updateFormStatus("这条错题已删除。");
+      updateFormStatus("这条已经删掉了。");
     }
   });
 
@@ -489,7 +501,7 @@ function bindEvents() {
   if (els.cloudSyncNow) {
     els.cloudSyncNow.addEventListener("click", () => {
       syncCloudProgressOnStartup({
-        announceMessage: "当前错题档案已经手动触发一次云端同步。",
+        announceMessage: "已经帮你重新同步了一次。",
       });
     });
   }
@@ -618,8 +630,8 @@ function renderAll() {
 function renderDashboard() {
   const stats = buildStats(state.entries);
   els.heroTotalCount.textContent = String(stats.total);
-  els.heroTopType.textContent = stats.topType?.label || "待积累";
-  els.heroTopCause.textContent = stats.topCause?.label || "待积累";
+  els.heroTopType.textContent = stats.topType?.label || "还没形成";
+  els.heroTopCause.textContent = stats.topCause?.label || "还没形成";
   els.ieltsCount.textContent = String(stats.byExam.ielts);
   els.kaoyanCount.textContent = String(stats.byExam.kaoyan);
   els.imageCount.textContent = String(stats.imageCount);
@@ -755,7 +767,7 @@ function renderEntryList() {
   els.selectionSummary.textContent = `已选 ${selectedCount} 条，当前筛出 ${filteredEntries.length} 条。`;
 
   if (!filteredEntries.length) {
-    els.entryList.innerHTML = renderEmptyState("还没有符合条件的错题", "试着先录一题，或者放宽筛选条件。");
+    els.entryList.innerHTML = renderEmptyState("这里暂时还是空的", "可以先记一题，或者把筛选条件放宽一点。");
     return;
   }
 
@@ -767,11 +779,13 @@ function renderEntryList() {
 
 function renderEntryCard(entry) {
   const selected = state.selectedIds.includes(entry.id);
+  const expanded = state.expandedEntryIds.includes(entry.id);
   const imageCount = entry.images?.length || 0;
   const tags = [...(entry.causeTags || []), ...(entry.tags || [])].slice(0, 8);
+  const summaryText = buildEntrySummary(entry);
 
   return `
-    <article class="entry-card">
+    <article class="entry-card ${expanded ? "is-expanded" : ""}">
       <div class="entry-card__top">
         <div class="entry-card__title">
           <span class="tag">${escapeHtml(getExamLabel(entry.exam))}</span>
@@ -793,7 +807,11 @@ function renderEntryCard(entry) {
         <span>优先级：${escapeHtml(entry.aiPriority || "normal")}</span>
       </div>
 
-      <div class="entry-card__body">
+      <div class="entry-card__preview">
+        <p>${escapeHtml(summaryText)}</p>
+      </div>
+
+      <div class="entry-card__body ${expanded ? "is-visible" : ""}">
         ${renderEntryField("错因", entry.errorReason)}
         ${renderEntryField("原文定位", entry.textLocation)}
         ${renderEntryField("同义替换", entry.paraphrase)}
@@ -805,6 +823,7 @@ function renderEntryCard(entry) {
           ${tags.map((tag) => `<span class="entry-chip">${escapeHtml(tag)}</span>`).join("") || '<span class="entry-chip entry-chip--danger">暂未打标签</span>'}
         </div>
         <div class="inline-actions">
+          <button class="button button--ghost button--small" data-entry-action="toggle" data-entry-id="${entry.id}" type="button">${expanded ? "收起详情" : "展开详情"}</button>
           <button class="button button--ghost button--small" data-entry-action="edit" data-entry-id="${entry.id}" type="button">编辑</button>
           <button class="button button--ghost button--small" data-entry-action="duplicate" data-entry-id="${entry.id}" type="button">复制</button>
           <button class="button button--ghost button--small" data-entry-action="delete" data-entry-id="${entry.id}" type="button">删除</button>
@@ -812,6 +831,21 @@ function renderEntryCard(entry) {
       </div>
     </article>
   `;
+}
+
+function buildEntrySummary(entry) {
+  const parts = [
+    entry.errorReason,
+    entry.reviewNote,
+    entry.textLocation,
+    entry.paraphrase,
+  ].map((item) => String(item || "").trim()).filter(Boolean);
+
+  if (!parts.length) {
+    return "这条错题暂时还没有展开说明，建议至少补一句为什么会错或下一次怎么避免。";
+  }
+
+  return truncate(parts.join(" "), 120);
 }
 
 function renderEntryField(label, value) {
@@ -829,8 +863,8 @@ function renderAiStatus() {
     ? `${aiStatus.provider_label} 已连接`
     : "未连接";
   els.aiSideMeta.textContent = aiStatus.available
-    ? "当前在线复盘已可用，会结合你选中的雅思或考研英语错题、统计信息和截图生成总结。"
-    : "还没有检测到可用的在线 AI。接通已部署的在线接口后，这里会自动显示可用状态。";
+    ? "现在可以直接在线生成复盘总结了，系统会结合你选中的错题、统计和截图一起看。"
+    : "现在还连不上在线总结服务，稍后再刷新看看。";
 }
 
 function renderCloudSyncUi() {
@@ -846,7 +880,7 @@ function renderCloudSyncUi() {
 
   els.heroCloudStatus.textContent = backendAvailable
     ? (loggedIn ? `${state.cloud.accountId} 已连接` : "可登录")
-    : "未配置";
+    : "暂不可用";
   els.cloudSyncStatus.textContent = `云端同步：${statusMessage}`;
   els.cloudSyncStatus.className = `badge badge--cloud chip--${statusTone}`;
   els.cloudSyncMeta.textContent = state.cloud.statusDetail || getDefaultCloudSyncDetail();
@@ -881,7 +915,7 @@ function renderCloudSyncUi() {
 function renderAiResult() {
   const payload = state.latestAiReview;
   if (!payload) {
-    els.aiResult.innerHTML = renderEmptyState("等待 AI 复盘", "先勾选几条错题，再让 AI 结合统计和截图做总结。");
+    els.aiResult.innerHTML = renderEmptyState("还没开始总结", "先勾几道想重点看的题，再来生成这一轮复盘。");
     return;
   }
 
@@ -894,7 +928,7 @@ function renderAiResult() {
           <span class="badge">${escapeHtml(payload.review_model || state.aiStatus.review_model || "gpt-5.1-thinking")}</span>
         </div>
         <h3>这一轮错题复盘总结</h3>
-        <p class="ai-summary">${escapeHtml(review.summary || "AI 没有返回摘要。")}</p>
+        <p class="ai-summary">${escapeHtml(review.summary || "这一轮还没拿到总结。")}</p>
       </div>
 
       <div class="ai-sections">
@@ -953,7 +987,7 @@ function renderPatternList(items, key) {
   return items.map((item) => `
     <div class="ai-pattern">
       <strong>${escapeHtml(item[key] || "未命名")}${item.count ? ` · ${item.count} 次` : ""}</strong>
-      <p>${escapeHtml(item.pattern || item.why_wrong || "AI 没有说明具体模式。")}</p>
+      <p>${escapeHtml(item.pattern || item.why_wrong || "这块暂时还没提炼出清楚的模式。")}</p>
       <p><strong>修正：</strong>${escapeHtml(item.fix || "待补充")}</p>
     </div>
   `).join("");
@@ -966,7 +1000,7 @@ function renderImageNotes(items) {
   return items.map((item) => `
     <div class="ai-image-note">
       <strong>${escapeHtml(item.image_label || "题目截图")}</strong>
-      <p>${escapeHtml(item.observation || "AI 没有给出具体观察。")}</p>
+      <p>${escapeHtml(item.observation || "这张图暂时还没整理出更具体的观察。")}</p>
       <p><strong>意义：</strong>${escapeHtml(item.implication || "待补充")}</p>
     </div>
   `).join("");
@@ -1135,7 +1169,7 @@ function resetForm(options = {}) {
   renderCauseSelector();
   renderDraftImages();
   if (!options.preserveStatus) {
-    updateFormStatus("数据会自动保存在本地浏览器。");
+    updateFormStatus("这页会自动保存，不用担心白填。");
   }
 }
 
@@ -1213,8 +1247,8 @@ function buildStats(entries) {
   const topCause = causeRanking[0] || null;
   const imageCount = entries.reduce((sum, entry) => sum + (entry.images?.length || 0), 0);
 
-  let title = "先录几题";
-  let note = "错题数量起来后，这里会告诉你更该先补哪个考试体系和模块。";
+  let title = "先记一题";
+  let note = "有几条记录以后，这里会更清楚地提醒你该先补哪一块。";
   if (entries.length) {
     const typeLabel = topType?.label || "当前主错题型";
     const causeLabel = topCause?.label || "主要失误";
@@ -1254,7 +1288,7 @@ async function refreshAiStatus() {
     available: false,
     provider_label: "GemAI / OpenAI Compatible",
     review_model: "gpt-5.1-thinking",
-    detail: "请接通已部署的在线 AI 接口。",
+    detail: "在线总结服务暂时还没连上。",
   };
 
   try {
@@ -1263,7 +1297,7 @@ async function refreshAiStatus() {
       headers: { Accept: "application/json" },
     });
     if (!response.ok) {
-      throw new Error(`状态接口不可用：${response.status}`);
+      throw new Error(`状态接口暂时不可用：${response.status}`);
     }
     const payload = await response.json();
     state.aiStatus = {
@@ -1285,12 +1319,12 @@ async function refreshAiStatus() {
 async function runAiReview() {
   const entries = resolveAiScopeEntries();
   if (!entries.length) {
-    els.aiRequestStatus.textContent = "没有可分析的错题";
+    els.aiRequestStatus.textContent = "先选几条错题再开始";
     return;
   }
 
   els.runAiReview.disabled = true;
-  els.aiRequestStatus.textContent = "正在把统计和截图一起发给 AI...";
+  els.aiRequestStatus.textContent = "正在整理这轮错题，请稍等…";
 
   const payload = {
     scope: els.aiScope.value,
@@ -1340,11 +1374,11 @@ async function runAiReview() {
     const quotaHint = Number.isFinite(Number(result.daily_remaining))
       ? ` · 今日剩余 ${Math.max(0, Number(result.daily_remaining || 0))} 次`
       : "";
-    els.aiRequestStatus.textContent = `分析完成 · ${result.provider_label || state.aiStatus.provider_label}${quotaHint}`;
+    els.aiRequestStatus.textContent = `这轮总结已经生成${quotaHint}`;
     renderAiResult();
     await persistState({ touch: true });
   } catch (error) {
-    els.aiRequestStatus.textContent = error.message || "AI 分析失败";
+    els.aiRequestStatus.textContent = error.message || "这次没有顺利生成，稍后再试一次";
   } finally {
     els.runAiReview.disabled = false;
   }
@@ -1904,7 +1938,7 @@ async function pushCloudProgressSnapshot(snapshot = buildStateSnapshot(), option
 
   cloudSyncInFlight = true;
   state.cloud.syncing = true;
-  setCloudSyncStatus("同步中", "info", `正在把错题档案写入账号“${state.cloud.accountId}”的云端空间。`);
+  setCloudSyncStatus("同步中", "info", `正在把这份记录存到账号“${state.cloud.accountId}”里。`);
 
   try {
     const payload = await requestCloudJson("/api/cloud-sync/state", {
@@ -1917,9 +1951,9 @@ async function pushCloudProgressSnapshot(snapshot = buildStateSnapshot(), option
 
     if (payload?.state && payload.conflict) {
       await applyCloudRemoteSnapshot(payload.state, payload.updatedAt, {
-        announceMessage: "云端里有一份更新更近的错题档案，系统已经自动切换到那一份。",
+        announceMessage: "云端那边有更新一些的版本，已经替你切过去了。",
       });
-      setCloudSyncStatus("已同步", "success", `云端账号“${state.cloud.accountId}”里已有更新版本，系统已自动切到较新的记录。`);
+      setCloudSyncStatus("已同步", "success", `云端那边有更新一些的版本，已经替你切过去了。`);
       return true;
     }
 
@@ -1930,7 +1964,7 @@ async function pushCloudProgressSnapshot(snapshot = buildStateSnapshot(), option
 
     state.cloud.lastSyncedAt = Number(payload?.updatedAt || getSnapshotUpdatedAt(snapshot) || Date.now()) || Date.now();
     persistCloudSyncSession();
-    setCloudSyncStatus("已同步", "success", `当前设备和账号“${state.cloud.accountId}”已经保持同一份错题档案。`);
+    setCloudSyncStatus("已同步", "success", `这台设备和账号“${state.cloud.accountId}”里的记录已经对上了。`);
     if (options.announceMessage) {
       updateFormStatus(options.announceMessage);
     }
@@ -1959,7 +1993,7 @@ function scheduleCloudProgressSync() {
     clearTimeout(cloudSyncTimer);
   }
 
-  setCloudSyncStatus("待同步", "warning", `检测到本地错题库有更新，系统会在短暂空闲后自动同步到账号“${state.cloud.accountId}”。`);
+  setCloudSyncStatus("待同步", "warning", `你刚改过内容，系统会稍后自动同步到账号“${state.cloud.accountId}”。`);
   cloudSyncTimer = setTimeout(() => {
     cloudSyncTimer = null;
     pushCloudProgressSnapshot(buildStateSnapshot());
@@ -1979,7 +2013,7 @@ async function syncCloudProgressOnStartup(options = {}) {
   }
 
   state.cloud.syncing = true;
-  setCloudSyncStatus("连接中", "info", `正在连接云端账号“${state.cloud.accountId}”，检查是否有更新的错题档案。`);
+  setCloudSyncStatus("连接中", "info", `正在看看账号“${state.cloud.accountId}”里有没有更新一些的记录。`);
 
   try {
     const remotePayload = await fetchCloudProgressSnapshot();
@@ -1994,22 +2028,22 @@ async function syncCloudProgressOnStartup(options = {}) {
 
     if (remoteSnapshot && remoteUpdatedAt > localUpdatedAt) {
       await applyCloudRemoteSnapshot(remoteSnapshot, remoteUpdatedAt, {
-        announceMessage: options.announceMessage || "已从云端拉回一份更新更近的错题档案。",
+        announceMessage: options.announceMessage || "已经从云端拉回更新一些的记录。",
       });
-      setCloudSyncStatus("已同步", "success", `已从账号“${state.cloud.accountId}”拉回一份更新更近的错题档案。`);
+      setCloudSyncStatus("已同步", "success", `已经从账号“${state.cloud.accountId}”拉回更新一些的记录。`);
       return;
     }
 
     if (localUpdatedAt > remoteUpdatedAt || (hasMeaningfulState(buildStateSnapshot()) && !remoteUpdatedAt)) {
       await pushCloudProgressSnapshot(buildStateSnapshot(), {
-        announceMessage: options.announceMessage || "当前错题档案已经同步到云端。",
+        announceMessage: options.announceMessage || "这份记录已经同步到云端。",
       });
       return;
     }
 
     state.cloud.lastSyncedAt = remoteUpdatedAt || state.cloud.lastSyncedAt || Date.now();
     persistCloudSyncSession();
-    setCloudSyncStatus("已同步", "success", `当前设备和账号“${state.cloud.accountId}”已经保持同一份错题档案。`);
+    setCloudSyncStatus("已同步", "success", `这台设备和账号“${state.cloud.accountId}”里的记录已经对上了。`);
   } catch (error) {
     if (isCloudSessionError(error)) {
       handleCloudSessionExpired(error);
@@ -2069,7 +2103,7 @@ async function handleCloudAuth(action) {
 
     await syncCloudProgressOnStartup({
       announceMessage:
-        action === "register" ? "云端同步账号已创建，当前错题档案已经开始同步。" : "云端同步账号已登录，当前错题档案已经开始同步。",
+        action === "register" ? "账号已经建好，现在开始同步这边的记录。" : "已经登录，正在对一下本地和云端哪份更新一些。",
     });
   } catch (error) {
     state.cloud.syncing = false;

@@ -150,6 +150,7 @@ const DB_VERSION = 1;
 const STORE_NAME = "snapshots";
 const SNAPSHOT_KEY = "journal";
 const MAX_AI_IMAGES = 6;
+const MAX_AI_IMAGE_DATA_URL_LENGTH = 1200 * 1024;
 const LOCAL_PROXY_ORIGIN = "http://127.0.0.1:8000";
 const CLOUD_SYNC_DELAY = 1400;
 const DEFAULT_CLOUD_SYNC_SESSION = {
@@ -929,6 +930,7 @@ function renderAiResult() {
         </div>
         <h3>这一轮错题复盘总结</h3>
         <p class="ai-summary">${escapeHtml(review.summary || "这一轮还没拿到总结。")}</p>
+        ${renderAiSupportNote(payload)}
       </div>
 
       <div class="ai-sections">
@@ -1011,6 +1013,19 @@ function renderStringList(items, emptyText) {
     return `<p>${escapeHtml(emptyText)}</p>`;
   }
   return `<ul>${items.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>`;
+}
+
+function renderAiSupportNote(payload) {
+  if (payload.image_fallback_used) {
+    return `<p class="ai-support-note">${escapeHtml(payload.image_fallback_message || "这轮截图没能顺利带进在线分析，我先按文字记录把总结整理出来了。")}</p>`;
+  }
+
+  const analyzedCount = Number(payload.images_analyzed || 0);
+  if (analyzedCount > 0) {
+    return `<p class="ai-support-note">这轮一并参考了 ${escapeHtml(String(analyzedCount))} 张截图。</p>`;
+  }
+
+  return "";
 }
 
 function setupDropzone() {
@@ -1374,14 +1389,31 @@ async function runAiReview() {
     const quotaHint = Number.isFinite(Number(result.daily_remaining))
       ? ` · 今日剩余 ${Math.max(0, Number(result.daily_remaining || 0))} 次`
       : "";
-    els.aiRequestStatus.textContent = `这轮总结已经生成${quotaHint}`;
+    const imageHint = result.image_fallback_used
+      ? " · 截图这轮没带进去，先按文字记录生成了总结"
+      : "";
+    els.aiRequestStatus.textContent = `这轮总结已经生成${imageHint}${quotaHint}`;
     renderAiResult();
     await persistState({ touch: true });
   } catch (error) {
-    els.aiRequestStatus.textContent = error.message || "这次没有顺利生成，稍后再试一次";
+    els.aiRequestStatus.textContent = formatAiReviewError(error);
   } finally {
     els.runAiReview.disabled = false;
   }
+}
+
+function formatAiReviewError(error) {
+  const message = String(error?.message || "").trim();
+  if (!message) {
+    return "这次没有顺利生成，稍后再试一次。";
+  }
+  if (message.includes("今日 AI 复盘次数已达")) {
+    return message;
+  }
+  if (message.includes("520")) {
+    return "这轮没有顺利生成，像是在线接口刚刚卡了一下。等一会儿再试，或者先去掉截图试一次。";
+  }
+  return message;
 }
 
 function resolveAiScopeEntries() {
@@ -1563,25 +1595,42 @@ function downloadFile(filename, contentType, content) {
 async function normalizeImageFile(file) {
   const dataUrl = await readFileAsDataUrl(file);
   const image = await loadImage(dataUrl);
-  const maxDimension = 1800;
+  const maxDimension = 1440;
   const scale = Math.min(1, maxDimension / Math.max(image.width, image.height));
-  const width = Math.max(1, Math.round(image.width * scale));
-  const height = Math.max(1, Math.round(image.height * scale));
+  let width = Math.max(1, Math.round(image.width * scale));
+  let height = Math.max(1, Math.round(image.height * scale));
+  let quality = 0.82;
+  let normalizedDataUrl = "";
   const canvas = document.createElement("canvas");
-  canvas.width = width;
-  canvas.height = height;
-  const context = canvas.getContext("2d");
-  context.drawImage(image, 0, 0, width, height);
-  const outputType = file.type === "image/png" ? "image/png" : "image/jpeg";
-  const normalizedDataUrl = canvas.toDataURL(outputType, outputType === "image/jpeg" ? 0.9 : undefined);
+
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    canvas.width = width;
+    canvas.height = height;
+    const context = canvas.getContext("2d");
+    context.fillStyle = "#ffffff";
+    context.fillRect(0, 0, width, height);
+    context.drawImage(image, 0, 0, width, height);
+    normalizedDataUrl = canvas.toDataURL("image/jpeg", quality);
+    if (normalizedDataUrl.length <= MAX_AI_IMAGE_DATA_URL_LENGTH) {
+      break;
+    }
+    width = Math.max(1, Math.round(width * 0.82));
+    height = Math.max(1, Math.round(height * 0.82));
+    quality = Math.max(0.6, quality - 0.08);
+  }
 
   return {
     id: createId(),
-    name: file.name || `screenshot-${Date.now()}.png`,
-    type: outputType,
+    name: toJpegFileName(file.name || `screenshot-${Date.now()}.png`),
+    type: "image/jpeg",
     size: normalizedDataUrl.length,
     dataUrl: normalizedDataUrl,
   };
+}
+
+function toJpegFileName(name) {
+  const base = String(name || "").replace(/\.[^.]+$/, "").trim() || `screenshot-${Date.now()}`;
+  return `${base}.jpg`;
 }
 
 function readFileAsDataUrl(file) {

@@ -318,6 +318,109 @@ function normalizeImage(image) {
   };
 }
 
+function buildUserContent(entries, stats, focusGoal, note, images) {
+  const userContent = [
+    {
+      type: "text",
+      text: [
+        "请基于以下英语考试错题档案做结构化复盘。",
+        "这些条目可能来自雅思阅读、雅思听力、考研英语阅读、考研英语新题型或考研英语完型填空。",
+        "",
+        "本轮目标:",
+        focusGoal || "未提供",
+        "",
+        "用户补充:",
+        note || "未提供",
+        "",
+        "错题条目:",
+        JSON.stringify(entries, null, 2),
+        "",
+        "统计汇总:",
+        JSON.stringify(stats, null, 2),
+        "",
+        "请务必输出一个合法 JSON 对象，不要添加 markdown、解释、代码块或思考过程。",
+        `JSON Schema:\n${JSON.stringify(ERROR_REVIEW_SCHEMA)}`,
+      ].join("\n"),
+    },
+  ];
+
+  images.forEach((image) => {
+    userContent.push({
+      type: "text",
+      text: `下面这张图对应：${image.image_label}。请结合它判断题干布局、干扰项、定位线索或同义替换陷阱。`,
+    });
+    userContent.push({
+      type: "image_url",
+      image_url: {
+        url: image.data_url,
+      },
+    });
+  });
+
+  return userContent;
+}
+
+async function requestStructuredReview({ baseUrl, apiKey, providerLabel, model, entries, stats, focusGoal, note, images }) {
+  const response = await fetch(`${baseUrl}/chat/completions`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+      Accept: "application/json",
+    },
+    body: JSON.stringify({
+      model,
+      messages: [
+        { role: "system", content: ERROR_REVIEW_INSTRUCTIONS },
+        { role: "user", content: buildUserContent(entries, stats, focusGoal, note, images) },
+      ],
+      temperature: 0.2,
+      stream: false,
+    }),
+  });
+
+  const rawText = await response.text();
+  let parsedResponse = null;
+  try {
+    parsedResponse = rawText ? JSON.parse(rawText) : {};
+  } catch {
+    parsedResponse = null;
+  }
+
+  if (!response.ok) {
+    const message = parsedResponse?.error?.message || rawText || "未知错误";
+    const error = new ApiError(`${providerLabel} 接口返回错误：${message}`, response.status);
+    error.upstreamMessage = String(message || "").trim();
+    throw error;
+  }
+
+  return clampPayload(
+    parseJsonTextResponse(extractCompletionText(parsedResponse || {}, providerLabel), providerLabel),
+  );
+}
+
+function shouldRetryWithoutImages(error, images) {
+  if (!images.length || !(error instanceof ApiError)) {
+    return false;
+  }
+
+  if (Number(error.status || 0) >= 500) {
+    return true;
+  }
+
+  const message = String(error.upstreamMessage || error.message || "").toLowerCase();
+  return [
+    "image",
+    "vision",
+    "data url",
+    "payload",
+    "too large",
+    "too long",
+    "invalid image",
+    "unsupported image",
+  ].some((token) => message.includes(token));
+}
+
 function extractCompletionText(payload, providerLabel) {
   const choice = payload?.choices?.[0];
   if (!choice) {
@@ -418,85 +521,51 @@ export async function requestErrorReview(payload, env, request) {
   const note = sanitizeShortText(payload?.note, 500);
   const stats = payload?.stats && typeof payload.stats === "object" ? payload.stats : {};
   const quota = await consumeDailyAiQuota(env, request);
+  let review = null;
+  let imageFallbackUsed = false;
+  let imageFallbackMessage = "";
 
-  const userContent = [
-    {
-      type: "text",
-      text: [
-        "请基于以下英语考试错题档案做结构化复盘。",
-        "这些条目可能来自雅思阅读、雅思听力、考研英语阅读、考研英语新题型或考研英语完型填空。",
-        "",
-        "本轮目标:",
-        focusGoal || "未提供",
-        "",
-        "用户补充:",
-        note || "未提供",
-        "",
-        "错题条目:",
-        JSON.stringify(entries, null, 2),
-        "",
-        "统计汇总:",
-        JSON.stringify(stats, null, 2),
-        "",
-        "请务必输出一个合法 JSON 对象，不要添加 markdown、解释、代码块或思考过程。",
-        `JSON Schema:\n${JSON.stringify(ERROR_REVIEW_SCHEMA)}`,
-      ].join("\n"),
-    },
-  ];
-
-  images.forEach((image) => {
-    userContent.push({
-      type: "text",
-      text: `下面这张图对应：${image.image_label}。请结合它判断题干布局、干扰项、定位线索或同义替换陷阱。`,
-    });
-    userContent.push({
-      type: "image_url",
-      image_url: {
-        url: image.data_url,
-      },
-    });
-  });
-
-  const response = await fetch(`${baseUrl}/chat/completions`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-      Accept: "application/json",
-    },
-    body: JSON.stringify({
-      model,
-      messages: [
-        { role: "system", content: ERROR_REVIEW_INSTRUCTIONS },
-        { role: "user", content: userContent },
-      ],
-      temperature: 0.2,
-      stream: false,
-    }),
-  });
-
-  const rawText = await response.text();
-  let parsedResponse = null;
   try {
-    parsedResponse = rawText ? JSON.parse(rawText) : {};
-  } catch {
-    parsedResponse = null;
-  }
+    review = await requestStructuredReview({
+      baseUrl,
+      apiKey,
+      providerLabel,
+      model,
+      entries,
+      stats,
+      focusGoal,
+      note,
+      images,
+    });
+  } catch (error) {
+    if (!shouldRetryWithoutImages(error, images)) {
+      throw error;
+    }
 
-  if (!response.ok) {
-    const message = parsedResponse?.error?.message || rawText || "未知错误";
-    throw new ApiError(`${providerLabel} 接口返回错误：${message}`, response.status);
+    review = await requestStructuredReview({
+      baseUrl,
+      apiKey,
+      providerLabel,
+      model,
+      entries,
+      stats,
+      focusGoal,
+      note,
+      images: [],
+    });
+    imageFallbackUsed = true;
+    imageFallbackMessage = "这轮截图没能顺利带进在线分析，我先按文字记录把总结整理出来了。要是想让截图也一起参与，下次可以少传几张，或换更小一点的图再试。";
   }
-
-  const review = clampPayload(
-    parseJsonTextResponse(extractCompletionText(parsedResponse || {}, providerLabel), providerLabel),
-  );
 
   return {
     provider: "openai",
     provider_label: providerLabel,
     review_model: model,
     review,
+    images_requested: images.length,
+    images_analyzed: imageFallbackUsed ? 0 : images.length,
+    image_fallback_used: imageFallbackUsed,
+    image_fallback_message: imageFallbackMessage,
     ...quota,
   };
 }

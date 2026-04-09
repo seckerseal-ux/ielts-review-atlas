@@ -880,6 +880,14 @@ textarea:focus,
   color: var(--ink);
 }
 
+.ai-support-note {
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: rgba(191, 110, 73, 0.12);
+  color: #8b4f36;
+  line-height: 1.65;
+}
+
 .ai-sections {
   grid-template-columns: 1fr;
 }

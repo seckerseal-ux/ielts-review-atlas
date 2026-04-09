@@ -6,6 +6,8 @@ const MAX_ERROR_REVIEW_IMAGE_DATA_URL_CHARS = 6 * 1024 * 1024;
 const AI_DAILY_LIMIT = 10;
 const DAILY_LIMIT_UTC_OFFSET_MINUTES = 8 * 60;
 const AI_RATE_LIMIT_PREFIX = "limit:error-review";
+const AI_RATE_LIMIT_RESET_BUCKET = "2026-04-09";
+const AI_RATE_LIMIT_RESET_VERSION = "2026-04-09-debug-reset-1";
 
 const ERROR_REVIEW_SCHEMA = {
   type: "object",
@@ -222,7 +224,11 @@ function getDailyLimitKey(ip, bucket) {
   return `${AI_RATE_LIMIT_PREFIX}:${bucket}:${encodeURIComponent(ip)}`;
 }
 
-async function consumeDailyAiQuota(env, request) {
+function shouldResetQuotaRecord(record, bucket) {
+  return bucket === AI_RATE_LIMIT_RESET_BUCKET && record?.reset_version !== AI_RATE_LIMIT_RESET_VERSION;
+}
+
+async function getDailyAiQuotaContext(env, request) {
   const store = getRateLimitStore(env);
   const ip = getClientIp(request);
   if (!store || !ip) {
@@ -232,21 +238,56 @@ async function consumeDailyAiQuota(env, request) {
   const now = Date.now();
   const bucket = getDailyLimitBucket(now);
   const key = getDailyLimitKey(ip, bucket);
-  const record = (await store.get(key, { type: "json" })) || {
+  let record = (await store.get(key, { type: "json" })) || {
     ip,
     bucket,
     count: 0,
   };
 
-  if (Number(record.count || 0) >= AI_DAILY_LIMIT) {
-    throw new ApiError(`当前 IP 今日 AI 复盘次数已达 ${AI_DAILY_LIMIT} 次，请明天再试。`, 429);
+  if (shouldResetQuotaRecord(record, bucket)) {
+    record = {
+      ip,
+      bucket,
+      count: 0,
+      updatedAt: now,
+      reset_version: AI_RATE_LIMIT_RESET_VERSION,
+    };
+    await store.put(key, JSON.stringify(record), {
+      expirationTtl: getDailyLimitTtl(now),
+    });
   }
 
+  return { store, ip, now, bucket, key, record };
+}
+
+function assertDailyAiQuotaAvailable(quotaContext) {
+  if (!quotaContext) {
+    return;
+  }
+  if (Number(quotaContext.record?.count || 0) >= AI_DAILY_LIMIT) {
+    throw new ApiError(`当前 IP 今日 AI 复盘次数已达 ${AI_DAILY_LIMIT} 次，请明天再试。`, 429);
+  }
+}
+
+async function consumeDailyAiQuota(quotaContext) {
+  if (!quotaContext) {
+    return null;
+  }
+
+  const {
+    store,
+    ip,
+    bucket,
+    key,
+    now,
+    record,
+  } = quotaContext;
   const nextRecord = {
     ip,
     bucket,
     count: Number(record.count || 0) + 1,
     updatedAt: now,
+    reset_version: record.reset_version || "",
   };
   await store.put(key, JSON.stringify(nextRecord), {
     expirationTtl: getDailyLimitTtl(now),
@@ -520,7 +561,8 @@ export async function requestErrorReview(payload, env, request) {
   const focusGoal = sanitizeShortText(payload?.focus_goal, 160);
   const note = sanitizeShortText(payload?.note, 500);
   const stats = payload?.stats && typeof payload.stats === "object" ? payload.stats : {};
-  const quota = await consumeDailyAiQuota(env, request);
+  const quotaContext = await getDailyAiQuotaContext(env, request);
+  assertDailyAiQuotaAvailable(quotaContext);
   let review = null;
   let imageFallbackUsed = false;
   let imageFallbackMessage = "";
@@ -556,6 +598,7 @@ export async function requestErrorReview(payload, env, request) {
     imageFallbackUsed = true;
     imageFallbackMessage = "这轮截图没能顺利带进在线分析，我先按文字记录把总结整理出来了。要是想让截图也一起参与，下次可以少传几张，或换更小一点的图再试。";
   }
+  const quota = await consumeDailyAiQuota(quotaContext);
 
   return {
     provider: "openai",

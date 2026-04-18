@@ -9,6 +9,17 @@ const AI_RATE_LIMIT_PREFIX = "limit:error-review";
 const AI_RATE_LIMIT_RESET_BUCKET = "2026-04-09";
 const AI_RATE_LIMIT_RESET_VERSION = "2026-04-09-debug-reset-1";
 const MAX_JSON_REPAIR_SOURCE_CHARS = 26000;
+const REVIEW_PAYLOAD_KEYS = [
+  "summary",
+  "ability_snapshot",
+  "recurring_question_types",
+  "recurring_error_causes",
+  "image_observations",
+  "reflection_highlights",
+  "next_actions",
+  "next_drill_plan",
+  "coach_message",
+];
 
 const ERROR_REVIEW_SCHEMA = {
   type: "object",
@@ -438,8 +449,9 @@ async function requestStructuredReview({ baseUrl, apiKey, providerLabel, model, 
 
   const completionText = extractCompletionText(parsedResponse || {}, providerLabel);
   try {
+    const finalized = finalizeReviewPayload(parseJsonTextResponse(completionText, providerLabel), { entries, stats, images });
     return {
-      review: clampPayload(parseJsonTextResponse(completionText, providerLabel)),
+      ...finalized,
       jsonRepairUsed: false,
     };
   } catch (error) {
@@ -450,8 +462,9 @@ async function requestStructuredReview({ baseUrl, apiKey, providerLabel, model, 
       model,
       sourceText: completionText,
     });
+    const finalized = finalizeReviewPayload(repairedPayload, { entries, stats, images });
     return {
-      review: clampPayload(repairedPayload),
+      ...finalized,
       jsonRepairUsed: true,
     };
   }
@@ -593,6 +606,223 @@ function parseJsonTextResponse(text, providerLabel) {
   throw new ApiError(`${providerLabel} 返回了无法解析的 JSON 结果。`, 502);
 }
 
+function finalizeReviewPayload(payload, context) {
+  const review = clampPayload(unwrapReviewPayload(payload));
+  const fallback = buildFallbackReview(context.entries, context.stats, context.images);
+  return {
+    review: mergeReviewWithFallback(review, fallback),
+    fallbackUsed: !isUsefulReview(review),
+  };
+}
+
+function unwrapReviewPayload(payload) {
+  const root = payload && typeof payload === "object" && !Array.isArray(payload) ? payload : {};
+  if (hasReviewShape(root)) {
+    return root;
+  }
+
+  for (const key of ["review", "result", "data", "output", "content"]) {
+    const value = root[key];
+    if (value && typeof value === "object" && !Array.isArray(value) && hasReviewShape(value)) {
+      return value;
+    }
+  }
+
+  return root;
+}
+
+function hasReviewShape(payload) {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    return false;
+  }
+  return REVIEW_PAYLOAD_KEYS.some((key) => Object.prototype.hasOwnProperty.call(payload, key));
+}
+
+function isUsefulReview(review) {
+  if (!review || typeof review !== "object") {
+    return false;
+  }
+
+  const snapshot = review.ability_snapshot || {};
+  const textSignals = [
+    review.summary,
+    snapshot.stronger_section,
+    snapshot.risk_section,
+    snapshot.accuracy_pattern,
+    review.coach_message,
+    ...(review.reflection_highlights || []),
+    ...(review.next_actions || []),
+    ...(review.next_drill_plan || []),
+  ].map((item) => String(item || "").trim()).filter(Boolean);
+
+  const structuredSignals = [
+    ...(review.recurring_question_types || []),
+    ...(review.recurring_error_causes || []),
+    ...(review.image_observations || []),
+  ];
+
+  return textSignals.join("").length >= 24 || structuredSignals.length > 0;
+}
+
+function mergeReviewWithFallback(review, fallback) {
+  return {
+    summary: review.summary || fallback.summary,
+    ability_snapshot: {
+      stronger_section: review.ability_snapshot.stronger_section || fallback.ability_snapshot.stronger_section,
+      risk_section: review.ability_snapshot.risk_section || fallback.ability_snapshot.risk_section,
+      accuracy_pattern: review.ability_snapshot.accuracy_pattern || fallback.ability_snapshot.accuracy_pattern,
+    },
+    recurring_question_types: review.recurring_question_types.length
+      ? review.recurring_question_types
+      : fallback.recurring_question_types,
+    recurring_error_causes: review.recurring_error_causes.length
+      ? review.recurring_error_causes
+      : fallback.recurring_error_causes,
+    image_observations: review.image_observations.length
+      ? review.image_observations
+      : fallback.image_observations,
+    reflection_highlights: review.reflection_highlights.length
+      ? review.reflection_highlights
+      : fallback.reflection_highlights,
+    next_actions: review.next_actions.length ? review.next_actions : fallback.next_actions,
+    next_drill_plan: review.next_drill_plan.length ? review.next_drill_plan : fallback.next_drill_plan,
+    coach_message: review.coach_message || fallback.coach_message,
+  };
+}
+
+function buildFallbackReview(entries = [], stats = {}, images = []) {
+  const totalEntries = Number(stats.total_entries || entries.length || 0);
+  const topAreas = normalizeRanking(stats.top_areas, countRanking(entries.map((entry) => getEntryAreaLabel(entry))));
+  const topTypes = normalizeRanking(stats.top_question_types, countRanking(entries.map((entry) => entry.question_type)));
+  const topCauses = normalizeRanking(stats.top_causes, countRanking(entries.flatMap((entry) => entry.cause_tags || [])));
+  const latestReflections = Array.isArray(stats.latest_reflections) ? stats.latest_reflections : [];
+  const topArea = topAreas[0]?.label || "当前记录的模块";
+  const topType = topTypes[0]?.label || entries[0]?.question_type || "当前错题型";
+  const topCause = topCauses[0]?.label || "定位、审题或同义替换";
+  const examSummary = summarizeExamMix(entries);
+
+  return {
+    summary: totalEntries
+      ? `这轮共复盘 ${totalEntries} 条错题，主要集中在“${topArea}”和“${topType}”。目前模型返回内容不够完整，我先根据已记录的题型、错因标签和心得整理一版基础复盘，后续记录越完整，分析会越具体。`
+      : "这轮记录信息还比较少，我先给出一版基础复盘框架。建议至少补充题目来源、题号、题型、正确答案、原文定位和自己的错因。", 
+    ability_snapshot: {
+      stronger_section: examSummary || "当前样本还不够判断稳定优势，先把每次做对但犹豫的题也一起记录下来。",
+      risk_section: `${topArea}里的“${topType}”需要优先关注。`,
+      accuracy_pattern: `本轮最值得先抓的是“${topCause}”，下一轮复盘要把证据句、题干关键词和正确选项之间的关系写清楚。`,
+    },
+    recurring_question_types: buildQuestionTypeFallback(topTypes, entries),
+    recurring_error_causes: buildCauseFallback(topCauses),
+    image_observations: buildImageFallback(images),
+    reflection_highlights: buildReflectionFallback(latestReflections, entries),
+    next_actions: [
+      "把本轮每道错题的原文定位句补完整，至少写出题干关键词、定位依据和正确选项依据。",
+      `优先复盘“${topType}”：不要只记答案，要写清楚自己当时为什么会被错误选项带走。`,
+      `下一次做题时专门盯住“${topCause}”，做完后马上给错题打标签，避免只凭感觉复盘。`,
+    ],
+    next_drill_plan: [
+      `用 20 分钟集中复盘本轮“${topType}”题，把正确项和干扰项各写一句判断依据。`,
+      "每天选 2 道错题重做，不看答案先重新定位，再对照原记录看思路有没有变化。",
+      "每累计 5 条错题，就按题型和错因做一次小结，找出最该先改的一个动作。",
+    ],
+    coach_message: "这轮不是白做，至少已经把薄弱题型和错因线索留下来了。下一步重点不是多刷，而是把每道错题的证据链补清楚：题干问什么、原文哪句话支持、错误选项偷换了哪里。",
+  };
+}
+
+function normalizeRanking(primary, fallback) {
+  const source = Array.isArray(primary) && primary.length ? primary : fallback;
+  return source
+    .map((item) => ({
+      label: String(item?.label || item?.question_type || item?.cause || item || "").trim(),
+      count: Number(item?.count || 1) || 1,
+    }))
+    .filter((item) => item.label)
+    .slice(0, 5);
+}
+
+function countRanking(labels) {
+  const counts = new Map();
+  labels.filter(Boolean).forEach((label) => {
+    const normalized = String(label || "").trim();
+    if (normalized) {
+      counts.set(normalized, (counts.get(normalized) || 0) + 1);
+    }
+  });
+  return Array.from(counts.entries())
+    .map(([label, count]) => ({ label, count }))
+    .sort((left, right) => right.count - left.count);
+}
+
+function getEntryAreaLabel(entry) {
+  const exam = entry.exam === "kaoyan" ? "考研英语" : "雅思";
+  const sectionLabels = {
+    reading: "阅读",
+    listening: "听力",
+    new_question: "新题型",
+    cloze: "完型填空",
+  };
+  return `${exam}${sectionLabels[entry.section] || ""}`;
+}
+
+function summarizeExamMix(entries) {
+  const ranking = countRanking(entries.map((entry) => getEntryAreaLabel(entry)));
+  if (!ranking.length) {
+    return "";
+  }
+  return `本轮已记录 ${ranking.map((item) => `${item.label} ${item.count} 条`).join("、")}，暂时先按这些模块观察。`;
+}
+
+function buildQuestionTypeFallback(topTypes, entries) {
+  const source = topTypes.length ? topTypes : normalizeRanking([], countRanking(entries.map((entry) => entry.question_type)));
+  return (source.length ? source : [{ label: "当前错题型", count: entries.length || 1 }]).slice(0, 5).map((item) => ({
+    question_type: item.label,
+    count: item.count,
+    why_wrong: `这类题在本轮出现了 ${item.count} 次，需要回看题干、定位句和选项之间的对应关系，确认是定位慢、审题偏差，还是同义替换没有识别。`,
+    fix: "复盘时固定写三行：题干关键词、原文证据句、正确项为什么比错误项更精确。",
+  }));
+}
+
+function buildCauseFallback(topCauses) {
+  const source = topCauses.length ? topCauses : [{ label: "定位、审题或同义替换", count: 1 }];
+  return source.slice(0, 5).map((item) => ({
+    cause: item.label,
+    count: item.count,
+    pattern: `本轮“${item.label}”出现频率较高，说明做题时可能还没有形成稳定的证据链检查动作。`,
+    fix: "下次遇到相似题，先停 10 秒确认题干限定词，再回到原文找能直接支撑答案的句子。",
+  }));
+}
+
+function buildImageFallback(images) {
+  if (!images.length) {
+    return [];
+  }
+  return images.slice(0, 4).map((image) => ({
+    image_label: image.image_label || "题目截图",
+    observation: "已收到这张截图，但模型这轮没有返回具体图片观察。",
+    implication: "建议在错题记录里补一句截图对应的题干、原文定位或选项差异，这样下一轮图片分析会更具体。",
+  }));
+}
+
+function buildReflectionFallback(latestReflections, entries) {
+  const reflections = latestReflections
+    .map((item) => String(item?.review_note || "").trim())
+    .filter(Boolean);
+  if (reflections.length) {
+    return reflections.slice(0, 5);
+  }
+
+  const notes = entries
+    .map((entry) => String(entry.review_note || entry.error_reason || "").trim())
+    .filter(Boolean);
+  if (notes.length) {
+    return notes.slice(0, 5);
+  }
+
+  return [
+    "目前心得记录还偏少，建议每条错题至少补一句“我当时为什么会选错”。",
+    "复盘时优先补证据链，而不是只记正确答案。",
+  ];
+}
+
 function extractBalancedJsonObjects(text) {
   const source = String(text || "");
   const objects = [];
@@ -638,21 +868,22 @@ function extractBalancedJsonObjects(text) {
 }
 
 function clampPayload(payload) {
-  const snapshot = payload?.ability_snapshot || {};
+  const normalizedPayload = payload && typeof payload === "object" && !Array.isArray(payload) ? payload : {};
+  const snapshot = normalizedPayload.ability_snapshot || {};
   return {
-    summary: String(payload?.summary || "").trim(),
+    summary: String(normalizedPayload.summary || "").trim(),
     ability_snapshot: {
       stronger_section: String(snapshot.stronger_section || "").trim(),
       risk_section: String(snapshot.risk_section || "").trim(),
       accuracy_pattern: String(snapshot.accuracy_pattern || "").trim(),
     },
-    recurring_question_types: Array.isArray(payload?.recurring_question_types) ? payload.recurring_question_types.slice(0, 5) : [],
-    recurring_error_causes: Array.isArray(payload?.recurring_error_causes) ? payload.recurring_error_causes.slice(0, 5) : [],
-    image_observations: Array.isArray(payload?.image_observations) ? payload.image_observations.slice(0, 4) : [],
-    reflection_highlights: Array.isArray(payload?.reflection_highlights) ? payload.reflection_highlights.slice(0, 5).map(String) : [],
-    next_actions: Array.isArray(payload?.next_actions) ? payload.next_actions.slice(0, 5).map(String) : [],
-    next_drill_plan: Array.isArray(payload?.next_drill_plan) ? payload.next_drill_plan.slice(0, 5).map(String) : [],
-    coach_message: String(payload?.coach_message || "").trim(),
+    recurring_question_types: Array.isArray(normalizedPayload.recurring_question_types) ? normalizedPayload.recurring_question_types.slice(0, 5) : [],
+    recurring_error_causes: Array.isArray(normalizedPayload.recurring_error_causes) ? normalizedPayload.recurring_error_causes.slice(0, 5) : [],
+    image_observations: Array.isArray(normalizedPayload.image_observations) ? normalizedPayload.image_observations.slice(0, 4) : [],
+    reflection_highlights: Array.isArray(normalizedPayload.reflection_highlights) ? normalizedPayload.reflection_highlights.slice(0, 5).map(String) : [],
+    next_actions: Array.isArray(normalizedPayload.next_actions) ? normalizedPayload.next_actions.slice(0, 5).map(String) : [],
+    next_drill_plan: Array.isArray(normalizedPayload.next_drill_plan) ? normalizedPayload.next_drill_plan.slice(0, 5).map(String) : [],
+    coach_message: String(normalizedPayload.coach_message || "").trim(),
   };
 }
 
@@ -686,6 +917,7 @@ export async function requestErrorReview(payload, env, request) {
   assertDailyAiQuotaAvailable(quotaContext);
   let review = null;
   let jsonRepairUsed = false;
+  let reviewFallbackUsed = false;
   let imageFallbackUsed = false;
   let imageFallbackMessage = "";
 
@@ -703,6 +935,7 @@ export async function requestErrorReview(payload, env, request) {
     });
     review = structuredReview.review;
     jsonRepairUsed = structuredReview.jsonRepairUsed;
+    reviewFallbackUsed = structuredReview.fallbackUsed;
   } catch (error) {
     if (!shouldRetryWithoutImages(error, images)) {
       throw error;
@@ -721,6 +954,7 @@ export async function requestErrorReview(payload, env, request) {
     });
     review = structuredReview.review;
     jsonRepairUsed = structuredReview.jsonRepairUsed;
+    reviewFallbackUsed = structuredReview.fallbackUsed;
     imageFallbackUsed = true;
     imageFallbackMessage = "这轮截图没能顺利带进在线分析，我先按文字记录把总结整理出来了。要是想让截图也一起参与，下次可以少传几张，或换更小一点的图再试。";
   }
@@ -736,6 +970,10 @@ export async function requestErrorReview(payload, env, request) {
     image_fallback_used: imageFallbackUsed,
     image_fallback_message: imageFallbackMessage,
     json_repair_used: jsonRepairUsed,
+    review_fallback_used: reviewFallbackUsed,
+    review_fallback_message: reviewFallbackUsed
+      ? "这轮模型返回的信息太少，我按你已记录的错题、统计和标签先整理了一版基础总结。"
+      : "",
     ...quota,
   };
 }

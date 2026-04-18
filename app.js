@@ -920,7 +920,7 @@ function renderAiResult() {
     return;
   }
 
-  const review = payload.review || {};
+  const review = getDisplayReview(payload);
   els.aiResult.innerHTML = `
     <article class="ai-card">
       <div class="ai-card__hero">
@@ -982,6 +982,89 @@ function renderAiResult() {
   `;
 }
 
+function getDisplayReview(payload) {
+  const review = payload.review || {};
+  if (isUsefulAiReview(review)) {
+    return review;
+  }
+
+  const entries = resolveAiScopeEntries();
+  const stats = buildStats(entries);
+  const topArea = stats.topArea?.label || "当前记录的模块";
+  const topType = stats.topType?.label || entries[0]?.questionType || "当前错题型";
+  const topCause = stats.topCause?.label || "定位、审题或同义替换";
+
+  return {
+    summary: entries.length
+      ? `这次返回内容太少，我先按你已记录的 ${entries.length} 条错题整理一版基础复盘。当前最值得先看的模块是“${topArea}”，题型是“${topType}”。`
+      : "这次返回内容太少。先补几条错题记录，再重新生成一次，会更容易拿到完整总结。",
+    ability_snapshot: {
+      stronger_section: "当前样本还不够判断稳定优势。",
+      risk_section: `${topArea}里的“${topType}”需要优先关注。`,
+      accuracy_pattern: `先从“${topCause}”这个错因入手，把题干、定位句和正确选项的证据链补清楚。`,
+    },
+    recurring_question_types: stats.typeRanking.slice(0, 5).map((item) => ({
+      question_type: item.label,
+      count: item.count,
+      why_wrong: "这类题在本轮出现得比较多，需要回看题干和原文证据之间的对应关系。",
+      fix: "复盘时固定写三行：题干关键词、原文证据句、正确项为什么更精确。",
+    })),
+    recurring_error_causes: stats.causeRanking.slice(0, 5).map((item) => ({
+      cause: item.label,
+      count: item.count,
+      pattern: `“${item.label}”是本轮高频错因之一。`,
+      fix: "下次做题先确认题干限定词，再回到原文找直接支撑答案的句子。",
+    })),
+    image_observations: stats.imageCount
+      ? [{
+          image_label: "题目截图",
+          observation: `本轮记录里有 ${stats.imageCount} 张截图，但这次返回内容没有给出具体图片观察。`,
+          implication: "建议重新生成一次，或在错题记录里补充截图对应的题干和选项差异。",
+        }]
+      : [],
+    reflection_highlights: entries
+      .map((entry) => entry.reviewNote || entry.errorReason)
+      .filter(Boolean)
+      .slice(0, 5),
+    next_actions: [
+      "重新生成一次 AI 总结，通常可以拿到更完整的结构化结果。",
+      `先手动补全“${topType}”相关错题的原文定位和同义替换。`,
+      `下次练题时专门盯住“${topCause}”，做完马上打标签。`,
+    ],
+    next_drill_plan: [
+      `集中复盘 3 道“${topType}”题，把正确项和干扰项各写一句判断依据。`,
+      "每天重做 2 道错题，不看答案先重新定位，再对照原记录看思路变化。",
+    ],
+    coach_message: "这次结果不理想，但你的错题记录还在。先不用删数据，刷新后重新生成一次就好；后端已经加了空结果兜底。",
+  };
+}
+
+function isUsefulAiReview(review) {
+  if (!review || typeof review !== "object") {
+    return false;
+  }
+
+  const snapshot = review.ability_snapshot || {};
+  const textSignals = [
+    review.summary,
+    snapshot.stronger_section,
+    snapshot.risk_section,
+    snapshot.accuracy_pattern,
+    review.coach_message,
+    ...(review.reflection_highlights || []),
+    ...(review.next_actions || []),
+    ...(review.next_drill_plan || []),
+  ].map((item) => String(item || "").trim()).filter(Boolean);
+
+  const structuredSignals = [
+    ...(review.recurring_question_types || []),
+    ...(review.recurring_error_causes || []),
+    ...(review.image_observations || []),
+  ];
+
+  return textSignals.join("").length >= 24 || structuredSignals.length > 0;
+}
+
 function renderPatternList(items, key) {
   if (!Array.isArray(items) || !items.length) {
     return "<p>暂无结构化结果。</p>";
@@ -1022,6 +1105,9 @@ function renderAiSupportNote(payload) {
   }
   if (payload.json_repair_used) {
     notes.push("这轮返回格式有点乱，已经自动整理成可以阅读的总结。");
+  }
+  if (payload.review_fallback_used) {
+    notes.push(payload.review_fallback_message || "这轮模型返回的信息太少，已经按你的错题记录先整理了一版基础总结。");
   }
 
   const analyzedCount = Number(payload.images_analyzed || 0);
@@ -1399,7 +1485,10 @@ async function runAiReview() {
     const repairHint = result.json_repair_used
       ? " · 返回格式已自动整理"
       : "";
-    els.aiRequestStatus.textContent = `这轮总结已经生成${imageHint}${repairHint}${quotaHint}`;
+    const fallbackHint = result.review_fallback_used
+      ? " · 已补成基础总结"
+      : "";
+    els.aiRequestStatus.textContent = `这轮总结已经生成${imageHint}${repairHint}${fallbackHint}${quotaHint}`;
     renderAiResult();
     await persistState({ touch: true });
   } catch (error) {

@@ -1016,16 +1016,20 @@ function renderStringList(items, emptyText) {
 }
 
 function renderAiSupportNote(payload) {
+  const notes = [];
   if (payload.image_fallback_used) {
-    return `<p class="ai-support-note">${escapeHtml(payload.image_fallback_message || "这轮截图没能顺利带进在线分析，我先按文字记录把总结整理出来了。")}</p>`;
+    notes.push(payload.image_fallback_message || "这轮截图没能顺利带进在线分析，我先按文字记录把总结整理出来了。");
+  }
+  if (payload.json_repair_used) {
+    notes.push("这轮返回格式有点乱，已经自动整理成可以阅读的总结。");
   }
 
   const analyzedCount = Number(payload.images_analyzed || 0);
-  if (analyzedCount > 0) {
-    return `<p class="ai-support-note">这轮一并参考了 ${escapeHtml(String(analyzedCount))} 张截图。</p>`;
+  if (!notes.length && analyzedCount > 0) {
+    notes.push(`这轮一并参考了 ${analyzedCount} 张截图。`);
   }
 
-  return "";
+  return notes.map((note) => `<p class="ai-support-note">${escapeHtml(note)}</p>`).join("");
 }
 
 function setupDropzone() {
@@ -1392,7 +1396,10 @@ async function runAiReview() {
     const imageHint = result.image_fallback_used
       ? " · 截图这轮没带进去，先按文字记录生成了总结"
       : "";
-    els.aiRequestStatus.textContent = `这轮总结已经生成${imageHint}${quotaHint}`;
+    const repairHint = result.json_repair_used
+      ? " · 返回格式已自动整理"
+      : "";
+    els.aiRequestStatus.textContent = `这轮总结已经生成${imageHint}${repairHint}${quotaHint}`;
     renderAiResult();
     await persistState({ touch: true });
   } catch (error) {
@@ -1412,6 +1419,9 @@ function formatAiReviewError(error) {
   }
   if (message.includes("520")) {
     return "这轮没有顺利生成，像是在线接口刚刚卡了一下。等一会儿再试，或者先去掉截图试一次。";
+  }
+  if (message.includes("无法解析的 JSON") || message.includes("返回的结果格式")) {
+    return "这轮返回格式有点乱，页面没能整理出来。你可以再点一次生成，系统会尽量自动修正。";
   }
   return message;
 }

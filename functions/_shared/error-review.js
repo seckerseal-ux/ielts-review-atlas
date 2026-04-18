@@ -8,6 +8,7 @@ const DAILY_LIMIT_UTC_OFFSET_MINUTES = 8 * 60;
 const AI_RATE_LIMIT_PREFIX = "limit:error-review";
 const AI_RATE_LIMIT_RESET_BUCKET = "2026-04-09";
 const AI_RATE_LIMIT_RESET_VERSION = "2026-04-09-debug-reset-1";
+const MAX_JSON_REPAIR_SOURCE_CHARS = 26000;
 
 const ERROR_REVIEW_SCHEMA = {
   type: "object",
@@ -435,9 +436,77 @@ async function requestStructuredReview({ baseUrl, apiKey, providerLabel, model, 
     throw error;
   }
 
-  return clampPayload(
-    parseJsonTextResponse(extractCompletionText(parsedResponse || {}, providerLabel), providerLabel),
-  );
+  const completionText = extractCompletionText(parsedResponse || {}, providerLabel);
+  try {
+    return {
+      review: clampPayload(parseJsonTextResponse(completionText, providerLabel)),
+      jsonRepairUsed: false,
+    };
+  } catch (error) {
+    const repairedPayload = await requestJsonRepair({
+      baseUrl,
+      apiKey,
+      providerLabel,
+      model,
+      sourceText: completionText,
+    });
+    return {
+      review: clampPayload(repairedPayload),
+      jsonRepairUsed: true,
+    };
+  }
+}
+
+async function requestJsonRepair({ baseUrl, apiKey, providerLabel, model, sourceText }) {
+  const response = await fetch(`${baseUrl}/chat/completions`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+      Accept: "application/json",
+    },
+    body: JSON.stringify({
+      model,
+      messages: [
+        {
+          role: "system",
+          content: [
+            "You repair imperfect JSON-like model output.",
+            "Return only one valid JSON object in Simplified Chinese.",
+            "Do not add markdown, explanation, code fences, or surrounding text.",
+            "If a field is missing, fill it with a concise safe default that matches the schema.",
+          ].join("\n"),
+        },
+        {
+          role: "user",
+          content: [
+            "把下面这段复盘回复整理成一个严格合法的 JSON 对象。",
+            `必须满足这个 JSON Schema:\n${JSON.stringify(ERROR_REVIEW_SCHEMA)}`,
+            "",
+            "待修复内容:",
+            String(sourceText || "").slice(0, MAX_JSON_REPAIR_SOURCE_CHARS),
+          ].join("\n"),
+        },
+      ],
+      temperature: 0,
+      stream: false,
+    }),
+  });
+
+  const rawText = await response.text();
+  let parsedResponse = null;
+  try {
+    parsedResponse = rawText ? JSON.parse(rawText) : {};
+  } catch {
+    parsedResponse = null;
+  }
+
+  if (!response.ok) {
+    const message = parsedResponse?.error?.message || rawText || "未知错误";
+    throw new ApiError(`${providerLabel} 返回的结果格式有点乱，自动整理时也没有成功：${message}`, response.status);
+  }
+
+  return parseJsonTextResponse(extractCompletionText(parsedResponse || {}, providerLabel), providerLabel);
 }
 
 function shouldRetryWithoutImages(error, images) {
@@ -499,6 +568,11 @@ function parseJsonTextResponse(text, providerLabel) {
       candidates.push(lines.slice(1, -1).join("\n").trim());
     }
   }
+  const fencedMatches = rawText.matchAll(/```(?:json)?\s*([\s\S]*?)```/gi);
+  for (const match of fencedMatches) {
+    candidates.push(String(match[1] || "").trim());
+  }
+  candidates.push(...extractBalancedJsonObjects(rawText));
   const firstCurly = rawText.indexOf("{");
   const lastCurly = rawText.lastIndexOf("}");
   if (firstCurly >= 0 && lastCurly > firstCurly) {
@@ -506,6 +580,9 @@ function parseJsonTextResponse(text, providerLabel) {
   }
 
   for (const candidate of candidates) {
+    if (!candidate) {
+      continue;
+    }
     try {
       return JSON.parse(candidate);
     } catch {
@@ -514,6 +591,50 @@ function parseJsonTextResponse(text, providerLabel) {
   }
 
   throw new ApiError(`${providerLabel} 返回了无法解析的 JSON 结果。`, 502);
+}
+
+function extractBalancedJsonObjects(text) {
+  const source = String(text || "");
+  const objects = [];
+  let start = -1;
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+
+  for (let index = 0; index < source.length; index += 1) {
+    const char = source[index];
+    if (inString) {
+      if (escaped) {
+        escaped = false;
+      } else if (char === "\\") {
+        escaped = true;
+      } else if (char === "\"") {
+        inString = false;
+      }
+      continue;
+    }
+
+    if (char === "\"") {
+      inString = true;
+      continue;
+    }
+    if (char === "{") {
+      if (depth === 0) {
+        start = index;
+      }
+      depth += 1;
+      continue;
+    }
+    if (char === "}" && depth > 0) {
+      depth -= 1;
+      if (depth === 0 && start >= 0) {
+        objects.push(source.slice(start, index + 1).trim());
+        start = -1;
+      }
+    }
+  }
+
+  return objects;
 }
 
 function clampPayload(payload) {
@@ -564,11 +685,12 @@ export async function requestErrorReview(payload, env, request) {
   const quotaContext = await getDailyAiQuotaContext(env, request);
   assertDailyAiQuotaAvailable(quotaContext);
   let review = null;
+  let jsonRepairUsed = false;
   let imageFallbackUsed = false;
   let imageFallbackMessage = "";
 
   try {
-    review = await requestStructuredReview({
+    const structuredReview = await requestStructuredReview({
       baseUrl,
       apiKey,
       providerLabel,
@@ -579,12 +701,14 @@ export async function requestErrorReview(payload, env, request) {
       note,
       images,
     });
+    review = structuredReview.review;
+    jsonRepairUsed = structuredReview.jsonRepairUsed;
   } catch (error) {
     if (!shouldRetryWithoutImages(error, images)) {
       throw error;
     }
 
-    review = await requestStructuredReview({
+    const structuredReview = await requestStructuredReview({
       baseUrl,
       apiKey,
       providerLabel,
@@ -595,6 +719,8 @@ export async function requestErrorReview(payload, env, request) {
       note,
       images: [],
     });
+    review = structuredReview.review;
+    jsonRepairUsed = structuredReview.jsonRepairUsed;
     imageFallbackUsed = true;
     imageFallbackMessage = "这轮截图没能顺利带进在线分析，我先按文字记录把总结整理出来了。要是想让截图也一起参与，下次可以少传几张，或换更小一点的图再试。";
   }
@@ -609,6 +735,7 @@ export async function requestErrorReview(payload, env, request) {
     images_analyzed: imageFallbackUsed ? 0 : images.length,
     image_fallback_used: imageFallbackUsed,
     image_fallback_message: imageFallbackMessage,
+    json_repair_used: jsonRepairUsed,
     ...quota,
   };
 }
